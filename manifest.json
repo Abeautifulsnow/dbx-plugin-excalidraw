@@ -1,0 +1,89 @@
+{
+  "$schema": "https://raw.githubusercontent.com/t8y2/dbx/plugin-sdk-v1/plugins/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "io.dbx.excalidraw",
+  "name": "Excalidraw Studio",
+  "version": "0.1.0",
+  "publisher": "runstone",
+  "description": "A lightweight, general-purpose diagramming workspace powered by Excalidraw for creating diagrams, visualizing database schemas, and designing system architectures directly within DBX.",
+  "icon": "assets/plugin.svg",
+  "engines": {
+    "dbx": ">=0.5.68",
+    "host_api": "1"
+  },
+  "entrypoints": {
+    "backend": {
+      "executable": "bin/dbx-plugin-dbx-plugin-excalidraw"
+    },
+    "ui": {
+      "root": "ui",
+      "entry": "ui/index.html"
+    }
+  },
+  "contributions": [
+    {
+      "type": "connection-provider",
+      "id": "io.dbx.excalidraw.connection",
+      "label": "Excalidraw Studio connection",
+      "icon": "assets/plugin.svg",
+      "database_type": "dbx-plugin-excalidraw",
+      "description": "Connection form contributed by Excalidraw Studio.",
+      "fields": [
+        {
+          "key": "display_name",
+          "label": "Connection name",
+          "type": "text",
+          "default": "Excalidraw Studio connection",
+          "binding": "name",
+          "required": true
+        },
+        {
+          "key": "host",
+          "label": "Host",
+          "type": "text",
+          "default": "localhost",
+          "binding": "host",
+          "required": true
+        },
+        {
+          "key": "port",
+          "label": "Port",
+          "type": "number",
+          "default": 0,
+          "binding": "port",
+          "required": true
+        }
+      ],
+      "workbench": "io.dbx.excalidraw.workbench",
+      "capabilities": ["test", "connect", "disconnect"]
+    },
+    {
+      "type": "workbench",
+      "id": "io.dbx.excalidraw.workbench",
+      "label": "Excalidraw Studio Workbench",
+      "description": "Sandboxed UI contributed by Excalidraw Studio.",
+      "icon": "assets/plugin.svg"
+    }
+  ],
+  "localizations": {
+    "zh-CN": {
+      "name": "Excalidraw Studio",
+      "description": "A lightweight, general-purpose diagramming workspace powered by Excalidraw for creating diagrams, visualizing database schemas, and designing system architectures directly within DBX.",
+      "contributions": {
+        "io.dbx.excalidraw.connection": {
+          "label": "Excalidraw Studio 连接",
+          "description": "由插件声明的连接表单。",
+          "fields": {
+            "display_name": { "label": "连接名称" },
+            "host": { "label": "主机" },
+            "port": { "label": "端口" }
+          }
+        },
+        "io.dbx.excalidraw.workbench": {
+          "label": "Excalidraw Studio 工作台",
+          "description": "由插件提供的沙箱工作台界面。"
+        }
+      }
+    }
+  }
+}
