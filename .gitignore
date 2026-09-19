@@ -4,3 +4,16 @@
 .DS_Store
 *.log
 .mimosa/
+
+# Frontend sources: dependencies and vendored font copies are reproducible
+# from the lockfile at build time.
+/frontend/node_modules/
+/frontend/public/fonts/
+
+# Built plugin UI emitted by `npm --prefix frontend run build`
+/ui/
+
+# Local Go workspace that wires the sidecar SDK (dev only; the CLI/dev host
+# maintains its own equivalent when building)
+/go.work
+/go.work.sum

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Excalidraw Studio</title>
+    <script>
+      // Identifies the saving app inside standard .excalidraw scenes.
+      window.EXCALIDRAW_PKG_NAME = "io.dbx.excalidraw";
+      // Excalidraw resolves runtime font URLs ("./fonts/...") against this
+      // prefix. Resolve it against the document base so it works both in the
+      // dev host and inside the DBX sandbox; fonts are vendored into the
+      // package (ui/fonts) so no CDN is ever needed.
+      try {
+        window.EXCALIDRAW_ASSET_PATH = new URL("./", document.baseURI).toString();
+      } catch {
+        window.EXCALIDRAW_ASSET_PATH = "./";
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

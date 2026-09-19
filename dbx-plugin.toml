@@ -3,7 +3,13 @@ schema_version = 1
 [backend]
 language = "go"
 directory = "backend"
-binary = "dbx-plugin-dbx-plugin-excalidraw"
+binary = "dbx-plugin-excalidraw"
 
 [package]
 include = ["assets", "ui"]
+
+[dev]
+# Direct node invocation: `npm --prefix` routes through cmd.exe on Windows,
+# which rejects the extended-length working directory the dev host passes.
+ui_build = ["node", "frontend/scripts/build.mjs"]
+ui_watch = ["node", "frontend/scripts/build.mjs", "--watch"]
