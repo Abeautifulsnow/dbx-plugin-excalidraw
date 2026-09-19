@@ -176,7 +176,7 @@ func (p *plugin) Handle(
 		if err != nil {
 			return nil, appError(-32602, "INVALID_ASSET_CHUNK", "Asset chunk is not valid base64.")
 		}
-		if err := validateDocumentIDForAsset(request.DocumentID); err != nil {
+		if err := validateDocumentID(request.DocumentID); err != nil {
 			return nil, appError(-32602, "INVALID_REQUEST", "Invalid document id.")
 		}
 		received, complete, err := p.store.PutAssetChunk(request.Hash, request.MimeType, request.Size, request.Offset, data)
@@ -207,10 +207,6 @@ func (p *plugin) Handle(
 	default:
 		return nil, dbxpluginsdk.MethodNotFound(method)
 	}
-}
-
-func validateDocumentIDForAsset(id string) error {
-	return validateDocumentID(id)
 }
 
 func main() {

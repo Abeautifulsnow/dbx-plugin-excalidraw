@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, type Plugin } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 // DBX dev host contract: a standalone "DBX_UI_BUILD_SUCCESS" line on stdout
@@ -9,6 +9,7 @@ function dbxUiBuildSuccess(): Plugin {
   let failed = false;
   return {
     name: "dbx-ui-build-success",
+    apply: "build",
     buildEnd(error) {
       failed = Boolean(error);
     },
@@ -44,5 +45,9 @@ export default defineConfig({
     assetsDir: "assets",
     chunkSizeWarningLimit: 15000,
     reportCompressedSize: false,
+  },
+  test: {
+    environment: "node",
+    include: ["src/**/*.test.ts"],
   },
 });

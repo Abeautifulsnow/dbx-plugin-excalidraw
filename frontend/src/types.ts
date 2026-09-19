@@ -13,7 +13,7 @@ export interface AssetRef {
   mimeType: string;
 }
 
-interface DbxPluginBridge {
+export interface DbxPluginBridge {
   ready: Promise<void>;
   context: unknown;
   locale: string;

@@ -39,7 +39,9 @@ export interface LoadedDocument {
 }
 
 // Hashes already present in backend storage; avoids re-uploading unchanged
-// images on every autosave.
+// images on every autosave. Bounded in practice by the number of distinct
+// images touched in one editor session (dataURL blobs themselves are the
+// dominant memory cost and live in the editor's own cache).
 const knownAssets = new Set<string>();
 
 export async function loadDocument(id: string): Promise<LoadedDocument> {

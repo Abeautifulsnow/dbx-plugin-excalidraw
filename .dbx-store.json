@@ -1,0 +1,16 @@
+{
+  "name": "Excalidraw Studio",
+  "description": "A lightweight, local-first diagramming workspace powered by Excalidraw, embedded directly in DBX.",
+  "icon": "assets/plugin.svg",
+  "tags": ["diagram", "drawing", "whiteboard", "excalidraw"],
+  "source": "https://github.com/Abeautifulsnow/dbx-plugin-excalidraw",
+  "homepage": "https://github.com/Abeautifulsnow/dbx-plugin-excalidraw",
+  "license": "MIT",
+  "releaseNotes": "Initial development release: Excalidraw editor embed, local document persistence with autosave, .excalidraw import/export, offline fonts, DBX theme and locale integration.",
+  "localizations": {
+    "zh-CN": {
+      "name": "Excalidraw Studio",
+      "description": "内嵌于 DBX 的轻量本地优先画图工作台，由 Excalidraw 驱动。"
+    }
+  }
+}

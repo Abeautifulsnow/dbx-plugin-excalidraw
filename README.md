@@ -60,12 +60,18 @@ Useful frontend commands (run inside `frontend/`):
 ```bash
 npm run build       # vendor fonts + vite build -> ../ui/
 npm run typecheck   # tsc --noEmit
+npm test            # vitest unit tests (persistence chunking, api adapter, ...)
 ```
 
-Go tests (store layer only; no SDK needed):
+Backend tests and an end-to-end protocol smoke (the SDK module is not on
+public Go proxies, so the scripts wire a temporary go.work to the CLI's
+bundled SDK sources; requires Node.js 22+ and Go):
 
 ```bash
-cd backend && go test ./...
+node scripts/backend-test.mjs   # go vet + unit tests for the store layer
+node scripts/sidecar-smoke.mjs  # spawns the sidecar and drives stdio JSON-RPC:
+                                # handshake, create/save/get, 1.2 MiB chunked
+                                # asset upload + byte-exact round-trip
 ```
 
 ## Package

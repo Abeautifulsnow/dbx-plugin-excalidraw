@@ -1,4 +1,4 @@
-import type { DocumentMeta } from "./types";
+import type { DocumentMeta, DbxPluginBridge } from "./types";
 
 export class ApiError extends Error {
   readonly code: string;
@@ -13,11 +13,12 @@ export class ApiError extends Error {
 // Backend protocol errors carry "CATEGORY: message" text; everything else is
 // treated as a transport/backend availability problem.
 async function call<T>(method: string, params: unknown): Promise<T> {
-  if (!window.dbxPlugin) {
+  const bridge = (globalThis as { window?: { dbxPlugin?: DbxPluginBridge } }).window?.dbxPlugin;
+  if (!bridge) {
     throw new ApiError("BACKEND_UNAVAILABLE", "DBX plugin bridge is not available.");
   }
   try {
-    return await window.dbxPlugin.invoke<T>(method, params);
+    return await bridge.invoke<T>(method, params);
   } catch (error) {
     if (error instanceof ApiError) {
       throw error;
