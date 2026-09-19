@@ -100,3 +100,18 @@ on the user's machine.
 Source code and unsigned candidates stay in this repository. DBX users install
 the DBX Store-signed assets exposed by the official catalog. Do not submit
 ordinary plugin source to `t8y2/dbx`.
+
+## Credits & licenses
+
+Excalidraw Studio is **Powered by
+[Excalidraw](https://github.com/excalidraw/excalidraw)** — the editor embeds
+the official `@excalidraw/excalidraw` React component (MIT, © 2020 Excalidraw).
+All fonts shipped for offline use (Excalifont, Virgil, Nunito, Lilita One,
+Cascadia Code, Comic Shanns, Liberation Sans, Xiaolai, Assistant) come from
+the Excalidraw package and are released under the SIL Open Font License 1.1.
+
+Full license texts and dependency attribution: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+(a copy ships inside every `.dbxp` under `assets/`).
+
+This project is an independent DBX plugin and is not affiliated with or
+endorsed by the Excalidraw project.
