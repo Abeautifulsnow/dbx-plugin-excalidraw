@@ -87,8 +87,19 @@ on the user's machine.
 
 ## Release
 
-1. Publish a GitHub Release. The workflow builds the frontend, then produces
-   unsigned per-target candidates plus `release-candidates.json`.
+1. Bump `version` in `manifest.json`, commit, then run:
+
+   ```bash
+   node scripts/release.mjs              # official release
+   node scripts/release.mjs --prerelease # release candidate (store sync skips these)
+   ```
+
+   The script refuses to run on a dirty or unsynced tree, derives the tag
+   from the manifest version (the store validates against it), generates
+   notes from `.dbx-store.json` plus the commit log, and creates the GitHub
+   Release with the credentials git already has. CI then builds the frontend
+   and one unsigned `.dbxp` candidate per platform together with
+   `release-candidates.json`.
 2. If this repository is registered with `autoUpdate: true`, DBX Store
    creates/updates the candidate PR automatically. Otherwise open one
    candidate PR against `t8y2/dbx-store:main`.
