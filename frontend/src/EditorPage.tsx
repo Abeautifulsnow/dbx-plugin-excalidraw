@@ -7,10 +7,11 @@ import { exportScene, type ExportKind } from "./export";
 import { ExcalidrawEditor } from "./ExcalidrawEditor";
 import { loadDocument, persistScene } from "./persistence";
 import type { DocumentMeta } from "./types";
-import type { Lang, Strings } from "./i18n";
+import { format, type Lang, type Strings } from "./i18n";
 
 type SaveStatus = "saved" | "dirty" | "saving" | "error";
 type Phase = "loading" | "ready" | "corrupt" | "error";
+type Toast = { message: string; kind: "error" | "success" };
 
 const AUTOSAVE_DELAY_MS = 1000;
 
@@ -30,7 +31,7 @@ export function EditorPage({ docId, theme, lang, t, onBack, onMetaChange }: Edit
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [titleDraft, setTitleDraft] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
 
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const latestRef = useRef<{ elements: readonly ExcalidrawElement[]; appState: AppState } | null>(null);
@@ -49,7 +50,11 @@ export function EditorPage({ docId, theme, lang, t, onBack, onMetaChange }: Edit
         if (cancelled) {
           return;
         }
-        filesCacheRef.current = new Map(Object.entries(loaded.files));
+        // Seed the cache with unavailable hash entries too, so the next save
+        // re-emits the original asset reference instead of dropping it.
+        filesCacheRef.current = new Map(
+          Object.entries({ ...loaded.files, ...loaded.unavailableFiles }) as [string, BinaryFileData][],
+        );
         lastSavedVersionRef.current = getSceneVersion(loaded.elements);
         setMeta(loaded.meta);
         setTitleDraft(loaded.meta.name);
@@ -106,14 +111,20 @@ export function EditorPage({ docId, theme, lang, t, onBack, onMetaChange }: Edit
     setSaveStatus("saving");
     try {
       const updated = await persistScene(docId, snapshot.elements, snapshot.appState, referencedFiles());
-      lastSavedVersionRef.current = getSceneVersion(snapshot.elements);
-      dirtyRef.current = rerunRef.current;
-      setSaveStatus(rerunRef.current ? "dirty" : "saved");
-      if (rerunRef.current) {
-        rerunRef.current = false;
-      } else {
+      const savedVersion = getSceneVersion(snapshot.elements);
+      lastSavedVersionRef.current = savedVersion;
+      // An edit can land while the save is in flight; derive dirtiness from
+      // the live scene instead of the queue flag so it can never be clobbered
+      // by a completing save (which used to silently drop the last edit).
+      const pending =
+        rerunRef.current || (latestRef.current ? getSceneVersion(latestRef.current.elements) !== savedVersion : false);
+      dirtyRef.current = pending;
+      setSaveStatus(pending ? "dirty" : "saved");
+      if (!rerunRef.current) {
         setMeta((previous) => (previous ? { ...previous, updatedAt: updated.updatedAt } : previous));
       }
+      // rerunRef is deliberately left set: the finally block below re-runs
+      // the save so mid-flight edits are persisted exactly one more time.
     } catch (error) {
       console.error("[editor] save failed", error);
       dirtyRef.current = true;
@@ -168,6 +179,20 @@ export function EditorPage({ docId, theme, lang, t, onBack, onMetaChange }: Edit
     };
   }, [runSave]);
 
+  // Destroying the webview skips React unmount cleanups entirely, so up to
+  // one autosave interval of edits could be lost on window close. Best-effort
+  // flush on pagehide; runSave already handles re-entry during an in-flight
+  // save, and the bridge call may outlive the page just long enough to land.
+  useEffect(() => {
+    const flush = () => {
+      if (dirtyRef.current) {
+        void runSave();
+      }
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, [runSave]);
+
   useEffect(() => {
     if (!toast) {
       return;
@@ -193,7 +218,7 @@ export function EditorPage({ docId, theme, lang, t, onBack, onMetaChange }: Edit
     } catch (error) {
       console.error("[editor] rename failed", error);
       setTitleDraft(meta.name);
-      setToast(t.renameFailed);
+      setToast({ message: t.renameFailed, kind: "error" });
     }
   };
 
@@ -204,10 +229,11 @@ export function EditorPage({ docId, theme, lang, t, onBack, onMetaChange }: Edit
       return;
     }
     try {
-      await exportScene(kind, meta.name, snapshot.elements, snapshot.appState, referencedFiles());
+      const path = await exportScene(kind, meta.name, snapshot.elements, snapshot.appState, referencedFiles());
+      setToast({ message: format(t.exportSavedPath, path), kind: "success" });
     } catch (error) {
       console.error("[editor] export failed", error);
-      setToast(t.exportFailed);
+      setToast({ message: t.exportFailed, kind: "error" });
     }
   };
 
@@ -224,7 +250,7 @@ export function EditorPage({ docId, theme, lang, t, onBack, onMetaChange }: Edit
       <div className="editor editor--placeholder">
         <div className="notice">
           <h2>{phase === "corrupt" ? t.corruptTitle : t.openFailed}</h2>
-          <p>{phase === "corrupt" ? t.corruptBody : t.backendMissingBody}</p>
+          <p>{phase === "corrupt" ? t.corruptBody : t.openFailedBody}</p>
           <button type="button" className="btn" onClick={onBack}>
             {t.back}
           </button>
@@ -290,12 +316,13 @@ export function EditorPage({ docId, theme, lang, t, onBack, onMetaChange }: Edit
           theme={theme}
           langCode={lang === "zh" ? "zh-CN" : "en"}
           onChange={handleChange}
+          onExternalFileDrop={() => setToast({ message: t.dropBlocked, kind: "error" })}
           onApi={(instance) => {
             apiRef.current = instance;
           }}
         />
       )}
-      {toast && <div className="toast toast--error">{toast}</div>}
+      {toast && <div className={`toast toast--${toast.kind}`}>{toast.message}</div>}
     </div>
   );
 }

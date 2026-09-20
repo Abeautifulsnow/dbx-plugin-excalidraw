@@ -47,6 +47,14 @@ func mapStoreError(err error) *dbxpluginsdk.PluginError {
 		return appError(-32000, "ASSET_NOT_FOUND", "The image data is missing.")
 	case errors.Is(err, errAssetChunk):
 		return appError(-32602, "INVALID_ASSET_CHUNK", err.Error())
+	case errors.Is(err, errInvalidJob):
+		return appError(-32602, "INVALID_REQUEST", "Invalid export job.")
+	case errors.Is(err, errExportName):
+		return appError(-32602, "INVALID_REQUEST", "Invalid export file name.")
+	case errors.Is(err, errExportTooBig):
+		return appError(-32000, "DOCUMENT_TOO_LARGE", "The export is too large.")
+	case errors.Is(err, errExportChunk):
+		return appError(-32602, "INVALID_EXPORT_CHUNK", err.Error())
 	default:
 		return appError(-32000, "DOCUMENT_SAVE_FAILED", "A local storage error occurred.")
 	}
@@ -203,6 +211,32 @@ func (p *plugin) Handle(
 			"size":       total,
 			"mimeType":   mimeType,
 		}, nil
+
+	case "export/write":
+		// The sandboxed UI cannot trigger browser downloads, so rendered
+		// exports are streamed here and written under <base>/exports/.
+		var request struct {
+			JobID      string `json:"jobId"`
+			Name       string `json:"name"`
+			Size       int64  `json:"size"`
+			Offset     int64  `json:"offset"`
+			DataBase64 string `json:"dataBase64"`
+		}
+		if pluginError := decodeParams(params, &request); pluginError != nil {
+			return nil, pluginError
+		}
+		if len(request.DataBase64) > maxBase64Chunk {
+			return nil, appError(-32600, "DOCUMENT_TOO_LARGE", "Export chunk exceeds the bridge limit.")
+		}
+		data, err := base64.StdEncoding.DecodeString(request.DataBase64)
+		if err != nil {
+			return nil, appError(-32602, "INVALID_EXPORT_CHUNK", "Export chunk is not valid base64.")
+		}
+		received, complete, path, err := p.store.WriteExportChunk(request.JobID, request.Name, request.Size, request.Offset, data)
+		if err != nil {
+			return nil, mapStoreError(err)
+		}
+		return map[string]any{"received": received, "complete": complete, "path": path}, nil
 
 	default:
 		return nil, dbxpluginsdk.MethodNotFound(method)

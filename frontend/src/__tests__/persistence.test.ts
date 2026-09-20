@@ -192,4 +192,25 @@ describe("loadDocument", () => {
     apiMock.getDocument.mockResolvedValue({ document: meta, corrupt: true, scene: null });
     await expect(loadDocument("doc-1")).rejects.toMatchObject({ code: "DOCUMENT_CORRUPT" });
   });
+
+  it("keeps the document openable when a single asset is missing", async () => {
+    const { loadDocument } = await freshPersistence();
+    const hash = "ab".repeat(32);
+    apiMock.getDocument.mockResolvedValue({
+      document: meta,
+      corrupt: false,
+      scene: {
+        elements: [{ id: "e1", type: "image", fileId: "img1" }],
+        files: { img1: { id: "img1", mimeType: "image/png", created: 1, hash, size: 3 } },
+      },
+    });
+    apiMock.getAssetChunk.mockRejectedValue(new Error("ASSET_NOT_FOUND: The image data is missing."));
+
+    const loaded = await loadDocument("doc-1");
+    expect(loaded.files.img1).toBeUndefined();
+    expect(loaded.elements).toHaveLength(1);
+    // The original hash reference is preserved so the next save re-emits it
+    // instead of dropping the asset from the scene for good.
+    expect(loaded.unavailableFiles.img1).toMatchObject({ hash, size: 3 });
+  });
 });

@@ -38,6 +38,14 @@ export interface PutChunkParams {
   dataBase64: string;
 }
 
+export interface ExportChunkParams {
+  jobId: string;
+  name: string;
+  size: number;
+  offset: number;
+  dataBase64: string;
+}
+
 export const api = {
   listDocuments: () => call<{ items: DocumentMeta[] }>("document/list", {}),
 
@@ -60,4 +68,7 @@ export const api = {
 
   getAssetChunk: (hash: string, offset: number, length: number) =>
     call<{ dataBase64: string; size: number; mimeType: string }>("asset/getChunk", { hash, offset, length }),
+
+  writeExportChunk: (params: ExportChunkParams) =>
+    call<{ received: number; complete: boolean; path: string }>("export/write", params),
 };

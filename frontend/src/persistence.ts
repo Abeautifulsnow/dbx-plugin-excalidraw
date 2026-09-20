@@ -36,6 +36,10 @@ export interface LoadedDocument {
   elements: OrderedExcalidrawElement[];
   appState: Partial<AppState>;
   files: BinaryFiles;
+  // Hash-bearing entries whose bytes could not be downloaded. They are kept
+  // (not restored into the canvas) so the next save re-emits the original
+  // asset reference instead of silently dropping it from the scene.
+  unavailableFiles: Record<string, StoredSceneFile>;
 }
 
 // Hashes already present in backend storage; avoids re-uploading unchanged
@@ -51,16 +55,24 @@ export async function loadDocument(id: string): Promise<LoadedDocument> {
   }
   const scene = response.scene as StoredScene;
   const files: BinaryFiles = {};
+  const unavailableFiles: Record<string, StoredSceneFile> = {};
   for (const [fileId, entry] of Object.entries(scene.files ?? {})) {
     if (entry.hash) {
-      const bytes = await downloadAsset(entry.hash);
-      knownAssets.add(entry.hash);
-      files[fileId] = {
-        id: entry.id ?? fileId,
-        mimeType: entry.mimeType,
-        created: entry.created ?? Date.now(),
-        dataURL: bytesToDataURL(bytes, entry.mimeType),
-      } as BinaryFileData;
+      // A missing or undownloadable asset must not take the whole document
+      // down: the image element degrades to Excalidraw's placeholder instead.
+      try {
+        const bytes = await downloadAsset(entry.hash);
+        knownAssets.add(entry.hash);
+        files[fileId] = {
+          id: entry.id ?? fileId,
+          mimeType: entry.mimeType,
+          created: entry.created ?? Date.now(),
+          dataURL: bytesToDataURL(bytes, entry.mimeType),
+        } as BinaryFileData;
+      } catch (error) {
+        console.warn("[persistence] asset unavailable; skipping file", fileId, entry.hash, error);
+        unavailableFiles[fileId] = entry;
+      }
     } else if (typeof entry.dataURL === "string") {
       files[fileId] = entry as unknown as BinaryFileData;
     }
@@ -75,6 +87,7 @@ export async function loadDocument(id: string): Promise<LoadedDocument> {
     elements: restored.elements,
     appState: restored.appState,
     files: restored.files,
+    unavailableFiles,
   };
 }
 
@@ -113,6 +126,12 @@ async function stripAndUploadFiles(
       continue;
     }
     const { mimeType, bytes } = parseDataURL(file.dataURL);
+    if (bytes.length === 0) {
+      // The backend rejects zero-length assets, so a hash reference could
+      // never be resolved again; keep the (empty) dataURL inline instead.
+      stripped[fileId] = file;
+      continue;
+    }
     const hash = await sha256Hex(bytes);
     if (!knownAssets.has(hash)) {
       const stat = await api.statAsset(hash);

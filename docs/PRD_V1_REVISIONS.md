@@ -71,7 +71,7 @@ Never leak OS paths in `message` (§26 unchanged).
 3. **On load**, the UI reassembles Excalidraw `BinaryFileData` objects and hydrates the scene before `restore()`.
 4. **On export**, the running editor already holds images in memory, so `serializeAsJSON` / `exportToBlob` / `exportToSvg` produce standard files unmodified — §4.3 format compatibility holds at the exchange boundary while internal storage stays split.
 5. **GC.** `document/delete` removes the scene and meta. Assets are deduplicated by hash and retained in V1; a later sweep can drop unreferenced hashes. Not release-blocking.
-6. **Ceiling.** `document/saveScene` rejects scene JSON > 8 MiB with `DOCUMENT_TOO_LARGE` (transport limit). Pure-vector scenes that large are exceptional; add scene chunking only if real usage appears.
+6. **Ceiling.** `document/saveScene` rejects scene JSON > 2 MB with `DOCUMENT_TOO_LARGE` (the 2 MiB UI→host bridge limit from R2; the earlier "8 MiB" here was a typo for the sidecar message limit). Pure-vector scenes that large are exceptional; add scene chunking only if real usage appears.
 
 **Autosave interaction (§11).** Debounce unchanged (1000 ms default). Each unique image hash transfers once; later saves referencing the same image are no-ops, so the expensive path is naturally rare.
 

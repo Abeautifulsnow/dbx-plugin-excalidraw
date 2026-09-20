@@ -33,10 +33,13 @@ export interface Strings {
   exportExcalidraw: string;
   exportPng: string;
   exportSvg: string;
+  exportSavedPath: string;
   exportFailed: string;
+  dropBlocked: string;
   corruptTitle: string;
   corruptBody: string;
   openFailed: string;
+  openFailedBody: string;
   backendMissing: string;
   backendMissingBody: string;
   renameFailed: string;
@@ -76,10 +79,13 @@ const en: Strings = {
   exportExcalidraw: "Excalidraw (.excalidraw)",
   exportPng: "PNG image",
   exportSvg: "SVG vector",
+  exportSavedPath: "Exported to {n}",
   exportFailed: "Export failed.",
+  dropBlocked: "To open an .excalidraw file, use Import on the home screen.",
   corruptTitle: "This diagram could not be opened",
   corruptBody: "The stored scene is damaged and was left untouched to avoid data loss.",
   openFailed: "This diagram could not be opened.",
+  openFailedBody: "The document could not be loaded. Your other diagrams are unaffected.",
   backendMissing: "Excalidraw Studio backend is unavailable.",
   backendMissingBody: "Your current unsaved canvas is still open.",
   renameFailed: "Rename failed.",
@@ -119,10 +125,13 @@ const zh: Strings = {
   exportExcalidraw: "Excalidraw (.excalidraw)",
   exportPng: "PNG 图片",
   exportSvg: "SVG 矢量图",
+  exportSavedPath: "已导出到 {n}",
   exportFailed: "导出失败。",
+  dropBlocked: "请使用首页的“导入”按钮打开 .excalidraw 文件。",
   corruptTitle: "无法打开该图表",
   corruptBody: "存储的场景数据已损坏，为避免数据丢失未做任何改动。",
   openFailed: "无法打开该图表。",
+  openFailedBody: "图表内容加载失败，其他图表不受影响。",
   backendMissing: "Excalidraw Studio 后端不可用。",
   backendMissingBody: "当前未保存的画布仍保持打开。",
   renameFailed: "重命名失败。",
@@ -135,6 +144,6 @@ export function pickLang(locale: string | undefined): Lang {
   return (locale ?? "").toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
-export function format(template: string, n: number): string {
-  return template.replace("{n}", String(n));
+export function format(template: string, value: number | string): string {
+  return template.replace("{n}", String(value));
 }

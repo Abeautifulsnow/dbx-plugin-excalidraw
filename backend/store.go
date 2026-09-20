@@ -29,12 +29,16 @@ var hashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 //	<base>/assets/<sha256>               image binaries, deduplicated
 //	<base>/assets/<sha256>.json          asset metadata
 //	<base>/assets/.partial/<sha256>      in-flight chunk uploads
+//	<base>/exports/<name>                files written by export/write
+//	<base>/exports/.partial/<jobId>      in-flight chunked export writes
 type Store struct {
-	mutex        sync.Mutex
-	baseDir      string
-	documentsDir string
-	assetsDir    string
-	partialDir   string
+	mutex         sync.Mutex
+	baseDir       string
+	documentsDir  string
+	assetsDir     string
+	partialDir    string
+	exportsDir    string
+	exportPartial string
 }
 
 // resolveBaseDir picks the plugin data location. Neither the sidecar protocol
@@ -65,12 +69,14 @@ func NewStore(pluginID string) (*Store, error) {
 
 func newStoreAt(base string) (*Store, error) {
 	store := &Store{
-		baseDir:      base,
-		documentsDir: filepath.Join(base, "documents"),
-		assetsDir:    filepath.Join(base, "assets"),
-		partialDir:   filepath.Join(base, "assets", ".partial"),
+		baseDir:       base,
+		documentsDir:  filepath.Join(base, "documents"),
+		assetsDir:     filepath.Join(base, "assets"),
+		partialDir:    filepath.Join(base, "assets", ".partial"),
+		exportsDir:    filepath.Join(base, "exports"),
+		exportPartial: filepath.Join(base, "exports", ".partial"),
 	}
-	for _, dir := range []string{store.documentsDir, store.assetsDir, store.partialDir} {
+	for _, dir := range []string{store.documentsDir, store.assetsDir, store.partialDir, store.exportsDir, store.exportPartial} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, err
 		}
@@ -78,6 +84,7 @@ func newStoreAt(base string) (*Store, error) {
 	if err := store.reconcile(); err != nil {
 		return nil, err
 	}
+	store.sweepStaleExportPartials()
 	return store, nil
 }
 
@@ -148,6 +155,12 @@ func (s *Store) assetMetaPath(hash string) string {
 }
 func (s *Store) partialPath(hash string) string {
 	return filepath.Join(s.partialDir, hash)
+}
+func (s *Store) exportPath(name string) string {
+	return filepath.Join(s.exportsDir, name)
+}
+func (s *Store) exportPartialPath(jobID string) string {
+	return filepath.Join(s.exportPartial, jobID)
 }
 
 func sortDocuments(documents []DocumentMeta) {

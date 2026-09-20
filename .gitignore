@@ -17,3 +17,5 @@
 # maintains its own equivalent when building)
 /go.work
 /go.work.sum
+out/
+outputs/

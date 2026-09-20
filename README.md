@@ -115,8 +115,10 @@ on the user's machine.
 
 - Scene JSON must stay under ~2 MiB after image stripping (bridge limit);
   vector-only scenes of that size are exceptional.
-- Export uses browser downloads (`<a download>`); verify inside real DBX and
-  fall back to the plugin data directory if the sandbox blocks downloads.
+- Exports are streamed to `<plugin data>/io.dbx.excalidraw/exports/<name>`
+  through the sidecar (`export/write`); the editor toast shows the resulting
+  path. Export names are capped at 160 runes (long document titles are
+  truncated automatically).
 - Fonts are vendored and `EXCALIDRAW_ASSET_PATH` resolves against the document
   base URL; re-verify rendering in the real DBX sandbox.
 

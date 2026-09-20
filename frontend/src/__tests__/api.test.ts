@@ -47,4 +47,18 @@ describe("api adapter", () => {
     await api.renameDocument("doc-1", "New Name");
     expect(invoke).toHaveBeenCalledWith("document/rename", { id: "doc-1", name: "New Name" });
   });
+
+  it("routes export chunks to the export/write method", async () => {
+    const invoke = vi.fn(() => ({ received: 3, complete: true, path: "p.png" }));
+    stubBridge(invoke);
+    const result = await api.writeExportChunk({ jobId: "job", name: "a.png", size: 3, offset: 0, dataBase64: "AAA=" });
+    expect(invoke).toHaveBeenCalledWith("export/write", {
+      jobId: "job",
+      name: "a.png",
+      size: 3,
+      offset: 0,
+      dataBase64: "AAA=",
+    });
+    expect(result.path).toBe("p.png");
+  });
 });
