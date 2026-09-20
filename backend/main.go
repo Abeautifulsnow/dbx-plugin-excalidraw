@@ -13,7 +13,7 @@ import (
 
 const (
 	pluginID       = "io.dbx.excalidraw"
-	pluginVersion  = "0.2.0"
+	pluginVersion  = "0.2.1"
 	maxBase64Chunk = 2 * 1024 * 1024
 )
 

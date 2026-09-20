@@ -125,11 +125,11 @@ async function main() {
     console.log("[smoke] initialize handshake");
     const init = await client.request("plugin/initialize", {
       host: { protocolVersions: [1] },
-      plugin: { id: "io.dbx.excalidraw", version: "0.2.0" },
+      plugin: { id: "io.dbx.excalidraw", version: "0.2.1" },
       permissions: [],
     });
     assert(init.protocolVersion === 1, "protocolVersion is 1");
-    assert(init.plugin.id === "io.dbx.excalidraw" && init.plugin.version === "0.2.0", "identity matches manifest");
+    assert(init.plugin.id === "io.dbx.excalidraw" && init.plugin.version === "0.2.1", "identity matches manifest");
 
     console.log("[smoke] document create");
     const created = await client.request("document/create", { name: "Smoke" });

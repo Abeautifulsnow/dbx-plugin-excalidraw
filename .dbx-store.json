@@ -6,7 +6,7 @@
   "source": "https://github.com/Abeautifulsnow/dbx-plugin-excalidraw",
   "homepage": "https://github.com/Abeautifulsnow/dbx-plugin-excalidraw",
   "license": "MIT",
-  "releaseNotes": "Initial development release: Excalidraw editor embed, local document persistence with autosave, .excalidraw import/export, offline fonts, DBX theme and locale integration.",
+  "releaseNotes": "Reliability release: fixes a rare autosave data-loss race, delivers exports to the plugin data folder (sandbox-safe, path shown in-app), keeps documents openable when an image asset is missing, prevents accidental scene replacement via drag-and-drop, and makes fresh clones build offline.",
   "localizations": {
     "zh-CN": {
       "name": "Excalidraw Studio",
