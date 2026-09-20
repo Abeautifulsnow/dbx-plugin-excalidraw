@@ -23,11 +23,13 @@ description: 发布 Excalidraw Studio（DBX 插件 io.dbx.excalidraw）新版本
    **恰好 6 个**。
 5. 本机直连 github.com 不通：git/curl/API 一律走本地代理 `http://127.0.0.1:7897`
    （Clash Verge 混合端口）。git 用一次性参数 `git -c http.proxy=...`，不改仓库配置；
-   `scripts/release.mjs` 内置了代理兜底（`release.mjs:25,56`）。
-   **开工前先做代理健康检查**（第 2 步里有对应命令）：代理端口在监听 ≠ 能用。若返回
-   `http=000` 且报 `schannel: failed to receive handshake` / `OpenSSL SSL_connect:
-   SSL_ERROR_SYSCALL`，说明代理上游断了——curl、git、python 三种方式都会同样报错，
-   是环境问题不是命令写错，先去修代理（换节点/更新订阅）再发版，不要在直连或重试上耗时间。
+   **任何联网 git 命令都要带**（`fetch`/`ls-remote`/`push` 都是，裸 `git fetch` 会
+   直接 `Connection was aborted`）；`scripts/release.mjs` 内置了代理兜底
+   （`release.mjs:25,56`）。
+   **开工前先做代理健康检查**（第 2 步第 0 条）：代理端口在监听 ≠ 能用。失败时报
+   `schannel: failed to receive handshake` / `SSL_ERROR_SYSCALL`，说明代理上游断了
+   ——curl、git、python 三种方式都会同样报错，是环境问题不是命令写错，先去修代理
+   （换节点/更新订阅）再发版，不要在直连或重试上耗时间。
 6. **凭据只进内存，绝不打印**。脚本用 git credential helper 里已有的 GitHub 凭据
    （与 push 同一份），你不需要提供 token。
 
@@ -65,9 +67,16 @@ git -c http.proxy=http://127.0.0.1:7897 ls-remote --tags origin refs/tags/v0.2.2
 
 ```bash
 # 0. 代理健康检查（发版全程依赖它；端口在监听不代表能用）
-curl -x http://127.0.0.1:7897 -sS -m 20 -o /dev/null -w "proxy http=%{http_code}\n" https://api.github.com/rate_limit
-#    期望 http=200。若 http=000 + `schannel: failed to receive handshake`，代理上游断了：
-#    先修代理再继续（git/curl/python 都会同样失败），别在这里反复重试
+curl -x http://127.0.0.1:7897 -sS -m 20 -o /dev/null https://api.github.com/rate_limit \
+  && echo "proxy OK" || echo "proxy FAILED"
+#    期望 `proxy OK`（exit 0）。失败时常伴随 `schannel: failed to receive handshake`
+#    / `SSL_ERROR_SYSCALL` —— 那是代理上游断了：先修代理（换节点/更新订阅）再继续，
+#    git/curl/python 都会同样失败，别在直连或重试上耗时间。
+#    ⚠️ 不要用 `-w '%{http_code}'` 判代理死活：本机 curl 8.8.0(mingw)+Schannel 下该
+#    组合对 https 会报 `curl: (43) ... bad argument` 并打印 http=000，**代理完全正常时
+#    也会如此**（同一条命令去掉 -w 即 exit 0，实测 4/4 复现）——那是 curl 的 bug，
+#    据此判定"代理断了"会误停一次本可成功的发版。
+#    需要看响应体确认不是错误页时：`curl -x ... https://api.github.com/rate_limit | head -c 80`
 
 # 0b. 构建前端：ui/ 是 vite 产物且被忽略（.gitignore 的 /ui/，frontend/vite.config.ts 的 outDir "../ui"），
 #     新 clone 里不存在；缺了它 check-project 会报 2 个错。CI 同样是先构建再打包。
@@ -154,6 +163,8 @@ release-candidates.json
 | 症状 | 原因与处理 |
 | --- | --- |
 | curl/git 报 `schannel: failed to receive handshake` 或 `OpenSSL SSL_connect: SSL_ERROR_SYSCALL` | 代理上游断了（端口仍在监听也会这样），先修代理再继续；不是命令或凭据问题 |
+| 代理健康检查打印 `http=000` 且报 `curl: (43) ... bad argument` | **不是**代理问题：是本机 mingw curl 8.8.0 + Schannel 对 https 加 `-w` 的 bug，代理正常时也复现。改用不带 `-w` 的检查（第 2 步第 0 条） |
+| 裸 `git fetch` / `git push` 报 `Recv failure: Connection was aborted` | 该命令没带代理。用 `git -c http.proxy=http://127.0.0.1:7897 ...` |
 | `release.mjs` 报 `GitHub API call failed` | 同上——它先直连再走代理，两条都不通时才会这样（`release.mjs:54-75`） |
 | `release.mjs` 报 worktree dirty / 不在 main / 不同步 | 先 commit 并 push（第 3 步）；未跟踪文件也算 dirty |
 | `release.mjs` 报 tag 已存在 | 该版本已发布过；**不可复用**，递增 `manifest.json` 版本重走全流程 |
