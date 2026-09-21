@@ -7,7 +7,7 @@
   "source": "https://github.com/Abeautifulsnow/dbx-plugin-excalidraw",
   "homepage": "https://github.com/Abeautifulsnow/dbx-plugin-excalidraw",
   "license": "MIT",
-  "releaseNotes": "Reliability release: fixes a rare autosave data-loss race, delivers exports to the plugin data folder (sandbox-safe, path shown in-app), keeps documents openable when an image asset is missing, prevents accidental scene replacement via drag-and-drop, and makes fresh clones build offline.",
+  "releaseNotes": "Adds a host-native save dialog, deep links from the editor and the result view into DBX's own file manager, remembered UI preferences (result row count and home search), and hands the Excalidraw editor the host locale as-is so its own translations apply. Also corrects the store listing, which previously declared no permissions while the manifest required two.",
   "localizations": {
     "zh-CN": {
       "name": "Excalidraw Studio",
