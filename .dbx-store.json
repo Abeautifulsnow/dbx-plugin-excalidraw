@@ -3,6 +3,7 @@
   "description": "A lightweight, local-first diagramming workspace powered by Excalidraw, embedded directly in DBX.",
   "icon": "assets/plugin.svg",
   "tags": ["diagram", "drawing", "whiteboard", "excalidraw"],
+  "permissions": ["host.workbench", "host.filesystem"],
   "source": "https://github.com/Abeautifulsnow/dbx-plugin-excalidraw",
   "homepage": "https://github.com/Abeautifulsnow/dbx-plugin-excalidraw",
   "license": "MIT",

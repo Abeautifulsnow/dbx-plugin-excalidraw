@@ -356,7 +356,7 @@ body {
   right: 0;
   top: calc(100% + 6px);
   z-index: 11;
-  min-width: 210px;
+  min-width: 240px;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--st-border);
@@ -378,6 +378,12 @@ body {
 
 .export-menu__list button:hover {
   background: color-mix(in srgb, var(--st-accent) 10%, transparent);
+}
+
+.export-menu__separator {
+  height: 1px;
+  background: var(--st-border);
+  margin: 4px 0;
 }
 
 /* ---------- Shared overlays ---------- */

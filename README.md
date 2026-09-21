@@ -23,6 +23,17 @@ leaving DBX — no cloud service involved.
   writes, per-document metadata sidecars, and startup reconciliation.
 - **Autosave** — debounced (~1 s) with a serialized save queue; save status is
   always visible (Saved / Saving… / Unsaved / Save failed).
+- **Export** — PNG / SVG / `.excalidraw`, rendered by the official Excalidraw
+  APIs and streamed to the sidecar, which writes them under
+  `<plugin data>/exports/`. The *Save as…* entries in the export menu hand the
+  bytes to the host's own save dialog (`host.saveFile`) so you can pick the
+  destination; the plugin folder remains the destination — and the fallback —
+  everywhere else.
+- **Preferences** — the result view's row count and the home screen's search
+  term are remembered across sessions, stored by the sidecar next to the
+  documents.
+- **Localization** — the plugin's own copy ships in en/zh. The editor is handed
+  the host locale verbatim, so Excalidraw's own translations cover the rest.
 
 ### Result canvas
 
@@ -68,6 +79,34 @@ loudly rather than handing back a truncated document. `mkdir` is not declared:
 the layout is flat and offering folder creation would imply a hierarchy that
 does not exist.
 
+**Reaching it from the plugin.** The export menu can open `excalidraw:/exports/`
+in DBX's own file manager (`host.openFilesystem`), and the result view can open
+`excalidraw:/documents/`. That turns the export path in a toast into one click
+from the file itself. Only directory URIs are sent: the host passes the URI
+through as the file manager's *initial folder*, so a file URI would surface as a
+failed listing rather than a rejected request.
+
+### Host compatibility
+
+The plugin targets `engines.dbx >= 0.5.68` and `host_api "1"`, and does not
+raise either: a narrower `engines` range makes the whole plugin uninstallable on
+older hosts, which is a worse trade than one feature degrading.
+
+Capabilities are therefore probed and degraded rather than gated at install
+time. Two worth knowing about:
+
+| Surface | Older hosts |
+| --- | --- |
+| Result canvas (`result-view`) | Needs a DBX build with `4f3be8ccf fix(plugin): resolve result-view by UI contribution` (2026-09-20) — see [Result canvas](#result-canvas) |
+| *Use the system save dialog* | Needs a build carrying `host.saveFile`; without it the export falls back to the plugin folder and the toast says so |
+
+There is no host-side version gate to read: the `init`, `context` and `env`
+frames carry no version or feature flags, and `init.capabilities` is a
+three-boolean set (`downloadFile` / `planApi` / `storage`) that covers none of
+the surfaces above. A capability is checked by calling it and handling the
+refusal, which is why every one of these paths has a fallback rather than a
+probe.
+
 ### Storage model
 
 Scenes are persisted with embedded image `dataURL`s stripped; image binaries
@@ -90,6 +129,8 @@ documents/<uuid>.excalidraw    scene JSON (image dataURLs stripped)
 documents/<uuid>.meta.json     metadata sidecar
 assets/<sha256>                image binaries, deduplicated
 assets/<sha256>.json           asset metadata
+exports/<name>                 files written by the export flow
+prefs.json                     UI preferences, written atomically
 ```
 
 ## Develop
@@ -188,7 +229,9 @@ on the user's machine.
   vector-only scenes of that size are exceptional.
 - Exports are streamed to `<plugin data>/io.dbx.excalidraw/exports/<name>`
   through the sidecar (`export/write`); the editor toast shows the resulting
-  path. Export names are capped at 160 runes (long document titles are
+  path, and the export menu can open that folder in DBX's file manager. On hosts
+  with `host.saveFile`, the *Save as…* entries write to a location the user picks
+  instead. Export names are capped at 160 runes (long document titles are
   truncated automatically).
 - Fonts are vendored and `EXCALIDRAW_ASSET_PATH` resolves against the document
   base URL; re-verify rendering in the real DBX sandbox.

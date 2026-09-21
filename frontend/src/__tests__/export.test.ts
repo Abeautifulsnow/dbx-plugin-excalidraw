@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const excalidrawMock = vi.hoisted(() => ({
   exportToBlob: vi.fn(async () => new Blob(["png-bytes"], { type: "image/png" })),
@@ -84,5 +84,52 @@ describe("exportScene", () => {
     await exportScene("excalidraw", "Diagram", [], {}, {});
     expect(excalidrawMock.serializeAsJSON).toHaveBeenCalled();
     expect(decode(0)).toBe('{"type":"excalidraw"}');
+  });
+});
+
+describe("saveSceneViaHost", () => {
+  type SaveFile = (options: { fileName?: string; contentType?: string }, data: Uint8Array) => Promise<{ path: string } | null>;
+
+  function stubSaveFile(saveFile: SaveFile) {
+    (globalThis as unknown as { window: unknown }).window = { dbxPlugin: { saveFile } };
+  }
+
+  afterEach(() => {
+    delete (globalThis as unknown as { window?: unknown }).window;
+  });
+
+  it("hands the rendered bytes to the host dialog and returns the chosen path", async () => {
+    const saveFile = vi.fn<SaveFile>(async () => ({ path: "D:\\chosen\\Diagram.png" }));
+    stubSaveFile(saveFile);
+    const { saveSceneViaHost } = await import("../export");
+    const path = await saveSceneViaHost("png", "Diagram", [], {}, {});
+    expect(path).toBe("D:\\chosen\\Diagram.png");
+    const [options, data] = saveFile.mock.calls[0];
+    expect(options).toEqual({ fileName: "Diagram.png", contentType: "image/png" });
+    expect(new TextDecoder().decode(data)).toBe("png-bytes");
+    // The bytes travel as their own ArrayBuffer, never through the chunked
+    // sidecar path.
+    expect(apiMock.writeExportChunk).not.toHaveBeenCalled();
+  });
+
+  it("treats a dismissed dialog as a null result, not a failure", async () => {
+    const saveFile = vi.fn<SaveFile>(async () => null);
+    stubSaveFile(saveFile);
+    const { saveSceneViaHost } = await import("../export");
+    await expect(saveSceneViaHost("svg", "Diagram", [], {}, {})).resolves.toBeNull();
+  });
+
+  it("rejects when the host build has no save dialog, so the caller can fall back", async () => {
+    (globalThis as unknown as { window: unknown }).window = { dbxPlugin: {} };
+    const { saveSceneViaHost } = await import("../export");
+    await expect(saveSceneViaHost("png", "Diagram", [], {}, {})).rejects.toThrow(/unavailable/);
+  });
+
+  it("propagates the host's own refusal", async () => {
+    stubSaveFile(async () => {
+      throw new Error("Host file saving is unavailable");
+    });
+    const { saveSceneViaHost } = await import("../export");
+    await expect(saveSceneViaHost("png", "Diagram", [], {}, {})).rejects.toThrow(/unavailable/);
   });
 });

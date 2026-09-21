@@ -1,8 +1,49 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { persistImportedScene } from "./persistence";
+import { setPref, usePrefs } from "./prefs";
 import type { DocumentMeta } from "./types";
 import { format, type Lang, type Strings } from "./i18n";
+
+/**
+ * The home screen's filter term, remembered across sessions.
+ *
+ * Derived from the store rather than seeded into state, so a preference that
+ * arrives after this mounted still applies. Writes are delayed so a burst of
+ * typing is one backend round-trip instead of one per character, and flushed on
+ * unmount — opening a diagram is exactly what ends the typing, and a lost flush
+ * would drop the last thing the user searched for.
+ */
+function useRememberedSearch(): [string, (value: string) => void] {
+  const prefs = usePrefs();
+  const [draft, setDraft] = useState<string | null>(null);
+  const pendingRef = useRef<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flush = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    if (pendingRef.current !== null) {
+      setPref("homeSearch", pendingRef.current);
+      pendingRef.current = null;
+    }
+  };
+
+  const change = (value: string) => {
+    setDraft(value);
+    pendingRef.current = value;
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(flush, SEARCH_PREF_DELAY_MS);
+  };
+
+  useEffect(() => flush, []);
+
+  return [draft ?? prefs.homeSearch ?? "", change];
+}
 
 interface HomePageProps {
   lang: Lang;
@@ -10,10 +51,13 @@ interface HomePageProps {
   onOpen: (meta: DocumentMeta) => void;
 }
 
+/** Long enough that a burst of typing writes once, short enough that it feels immediate on leaving. */
+const SEARCH_PREF_DELAY_MS = 600;
+
 export function HomePage({ lang, t, onOpen }: HomePageProps) {
   const [documents, setDocuments] = useState<DocumentMeta[] | null>(null);
   const [loadError, setLoadError] = useState(false);
-  const [query, setQuery] = useState("");
+  const [query, changeQuery] = useRememberedSearch();
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [renameTarget, setRenameTarget] = useState<{ meta: DocumentMeta; value: string } | null>(null);
@@ -164,7 +208,7 @@ export function HomePage({ lang, t, onOpen }: HomePageProps) {
           className="input home-search"
           placeholder={t.searchPlaceholder}
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => changeQuery(event.target.value)}
           aria-label={t.searchPlaceholder}
         />
       </div>

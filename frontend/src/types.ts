@@ -16,6 +16,7 @@ export interface AssetRef {
 /** Contribution ids declared in manifest.json. */
 export const WORKBENCH_CONTRIBUTION = "io.dbx.excalidraw.workbench";
 export const RESULT_VIEW_CONTRIBUTION = "io.dbx.excalidraw.result-view";
+export const FILESYSTEM_PROVIDER_ID = "io.dbx.excalidraw.documents";
 
 /** Which declared surface the host opened this instance for. */
 export type HostSurface = "workbench" | "result-view";
@@ -45,6 +46,16 @@ export interface ResultSetContext {
   };
 }
 
+/**
+ * Child context the host reads back when opening a plugin filesystem. Only
+ * `uri` is used for navigation; the host type-checks it and passes it through
+ * as the file manager's initial folder, without validating the scheme.
+ */
+export interface FilesystemChildContext {
+  uri?: string;
+  connectionId?: string;
+}
+
 export interface DbxPluginBridge {
   ready: Promise<void>;
   context: unknown;
@@ -55,6 +66,8 @@ export interface DbxPluginBridge {
   // Documented as text; the dev host currently returns the raw envelope.
   readAsset(path: string): Promise<string | { dataBase64: string; contentType: string }>;
   readAssetUrl(path: string): Promise<string>;
+  /** Opens the host's own file manager on one of this plugin's filesystem providers. */
+  openFilesystem?(providerId: string, childContext?: FilesystemChildContext): Promise<void>;
   /** Persist bytes through the host's native save dialog. */
   saveFile?(options: { fileName?: string; contentType?: string }, data: Uint8Array): Promise<{ path: string } | null>;
   copy?(text: string): Promise<void>;

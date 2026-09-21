@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildGridScene, cellText, deriveName, initialRowLimit, MAX_ROWS, ROW_CHOICES, rowChoices, type ResultGrid } from "../resultScene";
+import { buildGridScene, cellText, deriveName, initialRowLimit, MAX_ROWS, resolveRowLimit, ROW_CHOICES, rowChoices, type ResultGrid } from "../resultScene";
 
 const TITLE_FONT_SIZE = 20;
 const CAPTION_FONT_SIZE = 12;
@@ -305,5 +305,45 @@ describe("initialRowLimit", () => {
     expect(initialRowLimit(3)).toBe(3);
     expect(initialRowLimit(50)).toBe(25);
     expect(initialRowLimit(500)).toBe(25);
+  });
+});
+
+// The remembered count is read after the first paint, so it can be absent on the
+// render that matters and arrive later. Both cases have to leave the control on
+// a value it offers.
+describe("resolveRowLimit", () => {
+  it("uses the remembered count when this result can offer it", () => {
+    expect(resolveRowLimit(500, 100, null)).toBe(100);
+  });
+
+  it("still resolves when the preference has not arrived yet", () => {
+    // This is the case the boot sequence depends on: the page renders before
+    // `prefs/get` lands, and must not be blocked on it.
+    expect(resolveRowLimit(500, undefined, null)).toBe(initialRowLimit(500));
+    expect(rowChoices(500)).toContain(resolveRowLimit(500, undefined, null));
+  });
+
+  it("ignores a remembered count this result cannot offer", () => {
+    // A stale preference from a larger result must not leave the select holding
+    // a value that is not among its options.
+    expect(resolveRowLimit(12, 500, null)).toBe(initialRowLimit(12));
+    expect(rowChoices(12)).toContain(resolveRowLimit(12, 500, null));
+  });
+
+  it("lets an explicit choice on this result win over the remembered one", () => {
+    expect(resolveRowLimit(500, 100, 25)).toBe(25);
+  });
+
+  it("always returns one of the offered choices", () => {
+    for (const availableRows of [0, 1, 12, 25, 499, 500, 5000]) {
+      for (const remembered of [undefined, 1, 25, 100, 500, 99999]) {
+        for (const chosen of [null, 1, 50]) {
+          const resolved = resolveRowLimit(availableRows, remembered, chosen);
+          expect(rowChoices(availableRows), `rows=${availableRows} remembered=${remembered} chosen=${chosen}`).toContain(
+            resolved,
+          );
+        }
+      }
+    }
   });
 });

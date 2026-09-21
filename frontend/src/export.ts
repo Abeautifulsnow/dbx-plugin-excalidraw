@@ -3,6 +3,7 @@ import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { api } from "./api";
 import { bytesToBase64 } from "./bytes";
+import type { DbxPluginBridge } from "./types";
 
 export type ExportKind = "excalidraw" | "png" | "svg";
 
@@ -63,10 +64,12 @@ async function renderScene(
   return new Blob([json], { type: MIME_TYPES.excalidraw });
 }
 
-// The sandboxed workbench iframe silently swallows <a download> clicks (no
-// allow-downloads; see DBX host-api.md), so the rendered blob is streamed to
-// the Go sidecar, which writes it under <plugin data>/exports/ and returns
-// the on-disk path for the UI to surface.
+// The sandboxed workbench iframe cannot start a download of its own (no
+// allow-downloads, and WKWebView cancels blob navigations), so the rendered
+// blob is streamed to the Go sidecar, which writes it under
+// <plugin data>/exports/ and returns the on-disk path for the UI to surface.
+// This stays the default because it is the only path verified end to end; the
+// host's own save dialog is available on top of it via `saveSceneViaHost`.
 export async function exportScene(
   kind: ExportKind,
   baseName: string,
@@ -94,6 +97,44 @@ export async function exportScene(
     path = result.path;
   }
   return path;
+}
+
+/**
+ * Renders the scene and hands the bytes to the host's native save dialog,
+ * letting the user choose where the file lands.
+ *
+ * Resolves with the written path, or `null` when the user dismissed the dialog
+ * (a cancel is not a failure and deserves no error). Rejects when this host
+ * build has no save dialog at all, or the write failed — callers fall back to
+ * `exportScene`, which always works.
+ *
+ * The bytes bypass the request parameters entirely: `host.saveFile` carries
+ * them as a transferred ArrayBuffer, so the 2 MiB bridge parameter limit that
+ * shapes the chunked sidecar path does not apply here. The SDK hands over
+ * `bytes.buffer` without honouring a view's offset, which is why `bytes` is
+ * built from its own ArrayBuffer below rather than a subarray.
+ */
+export async function saveSceneViaHost(
+  kind: ExportKind,
+  baseName: string,
+  elements: readonly ExcalidrawElement[],
+  appState: Partial<AppState>,
+  files: BinaryFiles,
+): Promise<string | null> {
+  const bridge = (globalThis as { window?: { dbxPlugin?: DbxPluginBridge } }).window?.dbxPlugin;
+  if (!bridge?.saveFile) {
+    throw new Error("host.saveFile is unavailable in this host");
+  }
+  const blob = await renderScene(kind, elements, appState, files);
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  if (bytes.length === 0) {
+    throw new Error("export produced no data");
+  }
+  const result = await bridge.saveFile(
+    { fileName: exportFileName(kind, baseName), contentType: blob.type || undefined },
+    bytes,
+  );
+  return result?.path ?? null;
 }
 
 // crypto.randomUUID requires a secure context, which the sandboxed iframe

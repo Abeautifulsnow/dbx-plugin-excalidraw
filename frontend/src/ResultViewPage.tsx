@@ -1,6 +1,15 @@
 import { useMemo, useState } from "react";
 import { api } from "./api";
-import { buildGridScene, cellText, deriveName, initialRowLimit, rowChoices, type GridSceneResult } from "./resultScene";
+import { revealInFileManager } from "./fileManager";
+import { setPref, usePrefs } from "./prefs";
+import {
+  buildGridScene,
+  cellText,
+  deriveName,
+  resolveRowLimit,
+  rowChoices,
+  type GridSceneResult,
+} from "./resultScene";
 import { formatAll, type Strings } from "./i18n";
 import type { DocumentMeta, ResultSetContext } from "./types";
 
@@ -16,10 +25,12 @@ const PREVIEW_ROWS = 8;
 const PREVIEW_COLUMNS = 8;
 
 export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProps) {
+  const prefs = usePrefs();
   const availableRows = data.result.rows.length;
-  const [rowLimit, setRowLimit] = useState(() => initialRowLimit(availableRows));
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Null until the user picks a count on this result; the remembered preference
+  // is applied through resolveRowLimit, which tolerates arriving late.
+  const [chosenRows, setChosenRows] = useState<number | null>(null);
+  const rowLimit = resolveRowLimit(availableRows, prefs.resultRows, chosenRows);
 
   const hasResult = data.result.columns.length > 0 || availableRows > 0;
   const title = deriveName(data.sql) || t.resultViewTitle;
@@ -37,24 +48,23 @@ export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProp
     [data, rowLimit, title],
   );
 
-  const create = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const meta = await api.createDocument(deriveName(data.sql) || "");
-      await api.saveScene(meta.id, layout.scene);
-      onOpen(meta);
-    } catch (cause) {
-      console.error("[result-view] create failed", cause);
-      setError(t.resultViewFailed);
-    } finally {
-      setBusy(false);
-    }
+  const changeRowLimit = (rows: number) => {
+    setChosenRows(rows);
+    setPref("resultRows", rows);
   };
+
+  const actions = useResultViewActions({ sql: data.sql, scene: layout.scene, t, onOpen });
 
   return (
     <div className="result-view">
-      <ResultHeader t={t} busy={busy} canCreate={hasResult} onCreate={() => void create()} onBrowse={onBrowse} />
+      <ResultHeader
+        t={t}
+        busy={actions.busy}
+        canCreate={hasResult}
+        onCreate={actions.create}
+        onBrowse={onBrowse}
+        onReveal={actions.reveal}
+      />
 
       {!hasResult ? (
         <div className="notice">
@@ -69,8 +79,8 @@ export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProp
             layout={layout}
             availableRows={availableRows}
             rowLimit={rowLimit}
-            busy={busy}
-            onRowLimitChange={setRowLimit}
+            busy={actions.busy}
+            onRowLimitChange={changeRowLimit}
           />
           {availableRows === 0 ? (
             <div className="notice">
@@ -82,9 +92,65 @@ export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProp
         </>
       )}
 
-      {error && <div className="toast toast--error">{error}</div>}
+      {actions.failure && <div className="toast toast--error">{actions.failure}</div>}
     </div>
   );
+}
+
+interface ResultViewActions {
+  busy: boolean;
+  /** Message for the most recently failed action; null when it succeeded. */
+  failure: string | null;
+  create: () => void;
+  reveal: () => void;
+}
+
+/**
+ * The page's two host-facing actions and their failure message, kept out of the
+ * component so its body stays a description of what is rendered rather than a
+ * mix of rendering and error plumbing.
+ *
+ * A single failure slot is enough because every action clears it before it
+ * starts, so it always describes the last thing the user tried. The two messages
+ * stay distinct — "could not create the canvas" and "could not open the file
+ * manager" are different problems and are worded as such.
+ */
+function useResultViewActions(params: {
+  sql: string;
+  scene: GridSceneResult["scene"];
+  t: Strings;
+  onOpen: (meta: DocumentMeta) => void;
+}): ResultViewActions {
+  const { sql, scene, t, onOpen } = params;
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const create = async () => {
+    setBusy(true);
+    setFailure(null);
+    try {
+      const meta = await api.createDocument(deriveName(sql) || "");
+      await api.saveScene(meta.id, scene);
+      onOpen(meta);
+    } catch (cause) {
+      console.error("[result-view] create failed", cause);
+      setFailure(t.resultViewFailed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reveal = async () => {
+    setFailure(null);
+    try {
+      await revealInFileManager("documents");
+    } catch (cause) {
+      console.error("[result-view] could not open the DBX file manager", cause);
+      setFailure(t.revealFailed);
+    }
+  };
+
+  return { busy, failure, create: () => void create(), reveal: () => void reveal() };
 }
 
 interface ResultHeaderProps {
@@ -93,9 +159,10 @@ interface ResultHeaderProps {
   canCreate: boolean;
   onCreate: () => void;
   onBrowse: () => void;
+  onReveal: () => void;
 }
 
-function ResultHeader({ t, busy, canCreate, onCreate, onBrowse }: ResultHeaderProps) {
+function ResultHeader({ t, busy, canCreate, onCreate, onBrowse, onReveal }: ResultHeaderProps) {
   return (
     <header className="home-header">
       <div>
@@ -103,6 +170,9 @@ function ResultHeader({ t, busy, canCreate, onCreate, onBrowse }: ResultHeaderPr
         <p className="result-view__subtitle">{t.resultViewSubtitle}</p>
       </div>
       <div className="home-actions">
+        <button type="button" className="btn btn--ghost" onClick={onReveal} disabled={busy}>
+          {t.revealInFileManager}
+        </button>
         <button type="button" className="btn" onClick={onBrowse} disabled={busy}>
           {t.resultViewOpenExisting}
         </button>

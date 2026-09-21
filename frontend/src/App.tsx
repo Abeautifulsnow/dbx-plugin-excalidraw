@@ -36,7 +36,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 }
 
 export function App() {
-  const { phase, theme, lang, launch } = useHostSession();
+  const { phase, theme, lang, locale, launch } = useHostSession();
   // Null until the user navigates; the launch decides the initial surface.
   const [view, setView] = useState<View | null>(null);
   const t = strings[lang];
@@ -91,7 +91,7 @@ export function App() {
             key={current.id}
             docId={current.id}
             theme={theme}
-            lang={lang}
+            locale={locale}
             t={t}
             onBack={back}
             onMetaChange={() => {

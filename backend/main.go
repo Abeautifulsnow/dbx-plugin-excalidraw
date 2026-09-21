@@ -109,6 +109,8 @@ func (p *plugin) Handle(
 		return p.handleExport(method, params)
 	case strings.HasPrefix(method, "filesystem/"):
 		return p.handleFilesystem(method, params)
+	case strings.HasPrefix(method, "prefs/"):
+		return p.handlePrefs(method, params)
 	default:
 		return nil, dbxpluginsdk.MethodNotFound(method)
 	}
@@ -441,6 +443,48 @@ func (p *plugin) handleFilesystemMutate(method string, params json.RawMessage) (
 		// The provider exposes a flat two-directory layout; offering folder
 		// creation would imply a hierarchy that does not exist.
 		return nil, appError(-32000, "NOT_SUPPORTED", "Excalidraw Studio has no folders.")
+
+	default:
+		return nil, dbxpluginsdk.MethodNotFound(method)
+	}
+}
+
+func mapPrefError(err error) *dbxpluginsdk.PluginError {
+	switch {
+	case errors.Is(err, errPrefKey):
+		return appError(-32602, "INVALID_REQUEST", "Unknown preference key.")
+	case errors.Is(err, errPrefValue):
+		return appError(-32602, "INVALID_REQUEST", "Invalid preference value.")
+	default:
+		return appError(-32000, "PREFS_SAVE_FAILED", "The preference could not be saved.")
+	}
+}
+
+// handlePrefs serves the UI's small persisted preferences. The whole set is
+// returned on both calls, so the frontend never has to guess whether its local
+// copy still matches what is stored.
+func (p *plugin) handlePrefs(method string, params json.RawMessage) (any, *dbxpluginsdk.PluginError) {
+	switch method {
+	case "prefs/get":
+		return map[string]any{"values": p.store.getPrefs()}, nil
+
+	case "prefs/set":
+		var request struct {
+			Key   string          `json:"key"`
+			Value json.RawMessage `json:"value"`
+		}
+		if pluginError := decodeParams(params, &request); pluginError != nil {
+			return nil, pluginError
+		}
+		var value any
+		if err := json.Unmarshal(request.Value, &value); err != nil {
+			return nil, appError(-32602, "INVALID_REQUEST", "Malformed preference value.")
+		}
+		values, err := p.store.setPref(request.Key, value)
+		if err != nil {
+			return nil, mapPrefError(err)
+		}
+		return map[string]any{"values": values}, nil
 
 	default:
 		return nil, dbxpluginsdk.MethodNotFound(method)

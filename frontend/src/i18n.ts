@@ -35,6 +35,13 @@ export interface Strings {
   exportSvg: string;
   exportSavedPath: string;
   exportFailed: string;
+  exportSaveDialogFallback: string;
+  saveAsExcalidraw: string;
+  saveAsPng: string;
+  saveAsSvg: string;
+  openExportsFolder: string;
+  revealInFileManager: string;
+  revealFailed: string;
   dropBlocked: string;
   corruptTitle: string;
   corruptBody: string;
@@ -98,6 +105,13 @@ const en: Strings = {
   exportSvg: "SVG vector",
   exportSavedPath: "Exported to {n}",
   exportFailed: "Export failed.",
+  exportSaveDialogFallback: "Could not save through the system dialog; exported to {n}",
+  saveAsExcalidraw: "Save as .excalidraw…",
+  saveAsPng: "Save as PNG…",
+  saveAsSvg: "Save as SVG…",
+  openExportsFolder: "Open the exports folder",
+  revealInFileManager: "Show in file manager",
+  revealFailed: "Could not open the DBX file manager.",
   dropBlocked: "To open an .excalidraw file, use Import on the home screen.",
   corruptTitle: "This diagram could not be opened",
   corruptBody: "The stored scene is damaged and was left untouched to avoid data loss.",
@@ -161,6 +175,13 @@ const zh: Strings = {
   exportSvg: "SVG 矢量图",
   exportSavedPath: "已导出到 {n}",
   exportFailed: "导出失败。",
+  exportSaveDialogFallback: "未能通过系统对话框保存，已导出到 {n}",
+  saveAsExcalidraw: "另存为 .excalidraw…",
+  saveAsPng: "另存为 PNG…",
+  saveAsSvg: "另存为 SVG…",
+  openExportsFolder: "打开导出文件夹",
+  revealInFileManager: "在文件管理器中显示",
+  revealFailed: "无法打开 DBX 文件管理器。",
   dropBlocked: "请使用首页的“导入”按钮打开 .excalidraw 文件。",
   corruptTitle: "无法打开该图表",
   corruptBody: "存储的场景数据已损坏，为避免数据丢失未做任何改动。",
@@ -193,6 +214,55 @@ export const strings: Record<Lang, Strings> = { en, zh };
 
 export function pickLang(locale: string | undefined): Lang {
   return (locale ?? "").toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+/**
+ * The languages the Excalidraw editor actually ships, copied from
+ * `@excalidraw/excalidraw/dist/prod/locales`. Excalidraw's own codes are not the
+ * codes DBX hands us: the host reports `es`, `it`, `ja`, `ko`, `tr` and `az`
+ * where the editor only knows `es-ES`, `it-IT`, `ja-JP`, `ko-KR`, `tr-TR` and
+ * `az-AZ`. Handing the host value straight to the editor would drop six of the
+ * ten host locales back to English, which is why it is resolved against this
+ * list instead.
+ *
+ * Re-check this list when the pinned Excalidraw version is upgraded. It is
+ * exported so `__tests__/i18n.test.ts` can diff it against the locales the
+ * installed package actually ships, which turns a silent locale regression into
+ * a failing test on the upgrade commit.
+ */
+export const EXCALIDRAW_LANGS = [
+  "ar-SA", "az-AZ", "bg-BG", "bn-BD", "ca-ES", "cs-CZ", "da-DK", "de-DE", "el-GR",
+  "en", "es-ES", "eu-ES", "fa-IR", "fi-FI", "fr-FR", "gl-ES", "he-IL", "hi-IN",
+  "hu-HU", "id-ID", "it-IT", "ja-JP", "kaa", "kab-KAB", "kk-KZ", "km-KH", "ko-KR",
+  "ku-TR", "lt-LT", "lv-LV", "mr-IN", "my-MM", "nb-NO", "nl-NL", "nn-NO", "oc-FR",
+  "pa-IN", "pl-PL", "pt-BR", "pt-PT", "ro-RO", "ru-RU", "si-LK", "sk-SK", "sl-SI",
+  "sv-SE", "ta-IN", "th-TH", "tr-TR", "uk-UA", "vi-VN", "zh-CN", "zh-HK", "zh-TW",
+];
+
+const EXCALIDRAW_BY_CODE = new Map(EXCALIDRAW_LANGS.map((code) => [code.toLowerCase(), code]));
+const EXCALIDRAW_BY_PRIMARY = new Map<string, string>();
+for (const code of EXCALIDRAW_LANGS) {
+  const primary = code.split("-")[0].toLowerCase();
+  // First match wins, so a shared primary tag (pt, zh) resolves deterministically.
+  if (!EXCALIDRAW_BY_PRIMARY.has(primary)) {
+    EXCALIDRAW_BY_PRIMARY.set(primary, code);
+  }
+}
+
+/**
+ * Narrows a host locale to the closest language the editor can render, so a
+ * host set to `ja` gets `ja-JP` rather than an unmatched code. Anything the
+ * editor has no translation for resolves to English — the same outcome the
+ * editor would reach on its own, but reached deliberately.
+ */
+export function excalidrawLangCode(locale: string | undefined): string {
+  const normalized = (locale ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "en";
+  }
+  return (
+    EXCALIDRAW_BY_CODE.get(normalized) ?? EXCALIDRAW_BY_PRIMARY.get(normalized.split("-")[0]) ?? "en"
+  );
 }
 
 export function format(template: string, value: number | string): string {

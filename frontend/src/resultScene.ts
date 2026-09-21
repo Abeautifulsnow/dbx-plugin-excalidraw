@@ -102,6 +102,36 @@ export function initialRowLimit(availableRows: number): number {
 }
 
 /**
+ * The row count the control should show: an explicit choice on this result
+ * wins, then the remembered preference, then the computed default — every
+ * candidate filtered through the choices this result actually offers.
+ *
+ * Derived rather than seeded into state, because the remembered value is read
+ * after the first paint — a boot-time read must never gate rendering, so it can
+ * arrive later and has to be picked up on a subsequent render.
+ *
+ * The filter matters for both candidates, not just the remembered one: the host
+ * can push a different result into an already-mounted page, which makes an
+ * earlier choice (and a remembered count) stale in the same way. Returning a
+ * value the select does not list would leave it displaying one count while the
+ * layout is built with another.
+ */
+export function resolveRowLimit(
+  availableRows: number,
+  remembered: number | undefined,
+  chosen: number | null,
+): number {
+  const choices = rowChoices(availableRows);
+  if (chosen !== null && choices.includes(chosen)) {
+    return chosen;
+  }
+  if (remembered !== undefined && choices.includes(remembered)) {
+    return remembered;
+  }
+  return initialRowLimit(availableRows);
+}
+
+/**
  * Names a canvas after the table the query reads from, when the SQL makes that
  * obvious. An empty result means "no better name than the default".
  */

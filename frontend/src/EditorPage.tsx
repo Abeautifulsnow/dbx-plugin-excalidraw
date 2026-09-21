@@ -1,30 +1,111 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { getSceneVersion } from "@excalidraw/excalidraw";
 import type { AppState, BinaryFileData, ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { api } from "./api";
-import { exportScene, type ExportKind } from "./export";
+import { exportScene, saveSceneViaHost, type ExportKind } from "./export";
 import { ExcalidrawEditor } from "./ExcalidrawEditor";
+import { revealInFileManager, type RevealTarget } from "./fileManager";
 import { loadDocument, persistScene } from "./persistence";
 import type { DocumentMeta } from "./types";
-import { format, type Lang, type Strings } from "./i18n";
+import { excalidrawLangCode, format, type Strings } from "./i18n";
 
 type SaveStatus = "saved" | "dirty" | "saving" | "error";
 type Phase = "loading" | "ready" | "corrupt" | "error";
 type Toast = { message: string; kind: "error" | "success" };
+/** Where an export lands: the plugin's own folder, or wherever the user picks. */
+type ExportDelivery = "folder" | "dialog";
+/** The live scene, as the editor last reported it. */
+type SceneSnapshot = { elements: readonly ExcalidrawElement[]; appState: AppState };
+
+interface ExportMenuActions {
+  exportAs: (kind: ExportKind, delivery: ExportDelivery) => void;
+  reveal: (target: RevealTarget) => void;
+}
+
+/**
+ * The export menu's actions — the only part of the editor that talks to the host
+ * and the sidecar. Kept out of the component so its body stays a description of
+ * what is on screen; every dependency is passed in because none of it is state
+ * the render needs.
+ */
+function useExportMenuActions(params: {
+  meta: DocumentMeta | null;
+  snapshot: RefObject<SceneSnapshot | null>;
+  files: () => Record<string, BinaryFileData>;
+  t: Strings;
+  report: (toast: Toast) => void;
+  closeMenu: () => void;
+}): ExportMenuActions {
+  const { meta, snapshot, files, t, report, closeMenu } = params;
+
+  const exportAs = async (kind: ExportKind, delivery: ExportDelivery) => {
+    closeMenu();
+    const current = snapshot.current;
+    if (!current || !meta) {
+      return;
+    }
+    const { elements, appState } = current;
+    const referenced = files();
+
+    // The plugin folder is the default and the fallback: it is the only delivery
+    // whose bytes have been verified end to end. "Save as…" asks the host for its
+    // native dialog instead, and lands in the plugin folder when the host cannot
+    // provide one — the fallback message says what happened without guessing
+    // which failure it was, since a rejected write arrives here too.
+    if (delivery === "dialog") {
+      try {
+        const path = await saveSceneViaHost(kind, meta.name, elements, appState, referenced);
+        // A null path is the user dismissing the dialog, which is not a failure
+        // and needs no message.
+        if (path) {
+          report({ message: format(t.exportSavedPath, path), kind: "success" });
+        }
+        return;
+      } catch (error) {
+        console.error("[editor] system save dialog failed; falling back to the plugin folder", error);
+      }
+    }
+
+    try {
+      const path = await exportScene(kind, meta.name, elements, appState, referenced);
+      const template = delivery === "dialog" ? t.exportSaveDialogFallback : t.exportSavedPath;
+      report({ message: format(template, path), kind: "success" });
+    } catch (error) {
+      console.error("[editor] export failed", error);
+      report({ message: t.exportFailed, kind: "error" });
+    }
+  };
+
+  const reveal = async (target: RevealTarget) => {
+    closeMenu();
+    try {
+      await revealInFileManager(target);
+    } catch (error) {
+      console.error("[editor] could not open the DBX file manager", error);
+      report({ message: t.revealFailed, kind: "error" });
+    }
+  };
+
+  return {
+    exportAs: (kind, delivery) => void exportAs(kind, delivery),
+    reveal: (target) => void reveal(target),
+  };
+}
 
 const AUTOSAVE_DELAY_MS = 1000;
 
 interface EditorPageProps {
   docId: string;
   theme: "light" | "dark";
-  lang: Lang;
+  /** The host locale verbatim; the editor ships more translations than we do. */
+  locale: string;
   t: Strings;
   onBack: () => void;
   onMetaChange: (meta: DocumentMeta) => void;
 }
 
-export function EditorPage({ docId, theme, lang, t, onBack, onMetaChange }: EditorPageProps) {
+export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: EditorPageProps) {
   const [phase, setPhase] = useState<Phase>("loading");
   const [meta, setMeta] = useState<DocumentMeta | null>(null);
   const [initialData, setInitialData] = useState<ExcalidrawInitialDataState | null>(null);
@@ -222,20 +303,14 @@ export function EditorPage({ docId, theme, lang, t, onBack, onMetaChange }: Edit
     }
   };
 
-  const handleExport = async (kind: ExportKind) => {
-    setExportOpen(false);
-    const snapshot = latestRef.current;
-    if (!snapshot || !meta) {
-      return;
-    }
-    try {
-      const path = await exportScene(kind, meta.name, snapshot.elements, snapshot.appState, referencedFiles());
-      setToast({ message: format(t.exportSavedPath, path), kind: "success" });
-    } catch (error) {
-      console.error("[editor] export failed", error);
-      setToast({ message: t.exportFailed, kind: "error" });
-    }
-  };
+  const actions = useExportMenuActions({
+    meta,
+    snapshot: latestRef,
+    files: referencedFiles,
+    t,
+    report: setToast,
+    closeMenu: () => setExportOpen(false),
+  });
 
   if (phase === "loading") {
     return (
@@ -296,14 +371,28 @@ export function EditorPage({ docId, theme, lang, t, onBack, onMetaChange }: Edit
             <>
               <div className="export-menu__overlay" onClick={() => setExportOpen(false)} />
               <div className="export-menu__list" role="menu">
-                <button type="button" role="menuitem" onClick={() => void handleExport("excalidraw")}>
+                <button type="button" role="menuitem" onClick={() => actions.exportAs("excalidraw", "folder")}>
                   {t.exportExcalidraw}
                 </button>
-                <button type="button" role="menuitem" onClick={() => void handleExport("png")}>
+                <button type="button" role="menuitem" onClick={() => actions.exportAs("png", "folder")}>
                   {t.exportPng}
                 </button>
-                <button type="button" role="menuitem" onClick={() => void handleExport("svg")}>
+                <button type="button" role="menuitem" onClick={() => actions.exportAs("svg", "folder")}>
                   {t.exportSvg}
+                </button>
+                <div className="export-menu__separator" role="separator" />
+                <button type="button" role="menuitem" onClick={() => actions.exportAs("excalidraw", "dialog")}>
+                  {t.saveAsExcalidraw}
+                </button>
+                <button type="button" role="menuitem" onClick={() => actions.exportAs("png", "dialog")}>
+                  {t.saveAsPng}
+                </button>
+                <button type="button" role="menuitem" onClick={() => actions.exportAs("svg", "dialog")}>
+                  {t.saveAsSvg}
+                </button>
+                <div className="export-menu__separator" role="separator" />
+                <button type="button" role="menuitem" onClick={() => actions.reveal("exports")}>
+                  {t.openExportsFolder}
                 </button>
               </div>
             </>
@@ -314,7 +403,7 @@ export function EditorPage({ docId, theme, lang, t, onBack, onMetaChange }: Edit
         <ExcalidrawEditor
           initialData={initialData}
           theme={theme}
-          langCode={lang === "zh" ? "zh-CN" : "en"}
+          langCode={excalidrawLangCode(locale)}
           onChange={handleChange}
           onExternalFileDrop={() => setToast({ message: t.dropBlocked, kind: "error" })}
           onApi={(instance) => {

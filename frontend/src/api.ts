@@ -71,4 +71,12 @@ export const api = {
 
   writeExportChunk: (params: ExportChunkParams) =>
     call<{ received: number; complete: boolean; path: string }>("export/write", params),
+
+  // Preferences live in the sidecar's own data directory rather than in
+  // `host.storage`: the sidecar already owns that directory (DBX_PLUGIN_DATA_DIR
+  // resolves to the same `plugin-data/<id>` the host KV would use), so a pref
+  // store there costs no extra manifest permission and no first-mover risk.
+  getPrefs: () => call<{ values: Record<string, unknown> }>("prefs/get", {}),
+
+  setPref: (key: string, value: unknown) => call<{ values: Record<string, unknown> }>("prefs/set", { key, value }),
 };

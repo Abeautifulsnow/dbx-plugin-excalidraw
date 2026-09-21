@@ -222,6 +222,7 @@ async function main() {
     const { created, image } = await checkDocumentAndAssetBridge(client);
     const documentUri = await checkFilesystemProvider(client, created, image);
     await checkFilesystemMutations(client, documentUri);
+    await checkPrefs(client, dataDir);
 
     console.log("[smoke] OK — all protocol assertions passed");
   } finally {
@@ -343,6 +344,72 @@ async function checkFilesystemMutations(client, documentUri) {
   assert(emptied.entries.length === 0, "delete empties the documents directory");
   const remaining = await client.request("document/list", {});
   assert(remaining.items.length === 0, "filesystem delete removes it from the document library too");
+}
+
+/**
+ * Preferences are a small allowlisted key/value set the UI reads once at boot
+ * and writes back one key at a time. The wire shapes and the refusal behaviour
+ * matter as much as the happy path: the frontend relies on an unknown key or a
+ * wrong-typed value failing loudly rather than being stored.
+ */
+async function checkPrefs(client, dataDir) {
+  console.log("[smoke] prefs/get on a fresh store");
+  const empty = await client.request("prefs/get", {});
+  assert(Object.keys(empty.values).length === 0, "a fresh store has no preferences");
+
+  console.log("[smoke] prefs/set");
+  const first = await client.request("prefs/set", { key: "resultRows", value: 250 });
+  assert(first.values.resultRows === 250, "prefs/set returns the stored set");
+  const second = await client.request("prefs/set", { key: "homeSearch", value: "invoice" });
+  assert(
+    second.values.resultRows === 250 && second.values.homeSearch === "invoice",
+    "a second write merges instead of replacing",
+  );
+
+  const readBack = await client.request("prefs/get", {});
+  assert(readBack.values.homeSearch === "invoice", "prefs/get returns what was stored");
+
+  console.log("[smoke] prefs guards");
+  let unknownKeyRejected = false;
+  try {
+    await client.request("prefs/set", { key: "somethingElse", value: 1 });
+  } catch (error) {
+    unknownKeyRejected = /INVALID_REQUEST/.test(error.message);
+  }
+  assert(unknownKeyRejected, "an unknown preference key is rejected");
+
+  let badValueRejected = false;
+  try {
+    await client.request("prefs/set", { key: "resultRows", value: -1 });
+  } catch (error) {
+    badValueRejected = /INVALID_REQUEST/.test(error.message);
+  }
+  assert(badValueRejected, "a wrong-typed or out-of-range value is rejected");
+
+  let oversizedTextRejected = false;
+  try {
+    await client.request("prefs/set", { key: "homeSearch", value: "x".repeat(201) });
+  } catch (error) {
+    oversizedTextRejected = /INVALID_REQUEST/.test(error.message);
+  }
+  assert(oversizedTextRejected, "an over-long free-text value is rejected");
+
+  let controlCharsRejected = false;
+  try {
+    await client.request("prefs/set", { key: "homeSearch", value: "a\nb" });
+  } catch (error) {
+    controlCharsRejected = /INVALID_REQUEST/.test(error.message);
+  }
+  assert(controlCharsRejected, "control characters in a free-text value are rejected");
+
+  // The write lands on disk, not just in memory: the sidecar resolves its data
+  // directory from DBX_PLUGIN_DATA_DIR, which the harness points at a temp dir.
+  const onDisk = JSON.parse(readFileSync(path.join(dataDir, "io.dbx.excalidraw", "prefs.json"), "utf8"));
+  assert(
+    onDisk.resultRows === 250 && onDisk.homeSearch === "invoice",
+    "preferences are persisted next to the documents",
+  );
+  assert(!("somethingElse" in onDisk), "a refused write leaves no trace in the file");
 }
 
 main().catch((error) => {

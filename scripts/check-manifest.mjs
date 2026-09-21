@@ -4,8 +4,9 @@
 // into "the plugin silently does not appear in the plugin center". This checks
 // the invariants that are easy to break while editing by hand and that no other
 // script covers: identifier shape, per-contribution required fields, icon files
-// that actually exist on disk, and localization keys that still resolve to a
-// declared contribution after a rename.
+// that actually exist on disk, localization keys that still resolve to a
+// declared contribution after a rename, and the permission set the store
+// listing promises to users.
 //
 // It is deliberately dependency-free so CI can run it before `npm ci`.
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -175,6 +176,46 @@ function checkLocalizations(manifest, contributionIds) {
   }
 }
 
+// The marketplace installer refuses a package whose manifest permissions are
+// not exactly the set the catalog entry declares. The auto-sync path builds
+// that catalog entry from `.dbx-store.json` alone — it takes only id,
+// publisher and version from `release-candidates.json` — so a key missing here
+// publishes a listing claiming the plugin requests nothing, and every install
+// of that version then fails with "Marketplace package permissions ... do not
+// match catalog permissions". The manual path (make-store-candidate.mjs) reads
+// the manifest directly, which is why this only ever breaks on auto-sync.
+function checkStoreListing(manifest) {
+  const storePath = path.join(repoRoot, ".dbx-store.json");
+  let store;
+  try {
+    store = JSON.parse(readFileSync(storePath, "utf8"));
+  } catch (error) {
+    fail(`.dbx-store.json could not be read: ${error.message}`);
+    return;
+  }
+
+  const declared = manifest.permissions ?? [];
+  const listed = store.permissions;
+  if (!Array.isArray(listed)) {
+    fail(
+      `.dbx-store.json has no "permissions" array; the store listing is synced from this file, ` +
+        `so it would claim the plugin requests nothing while manifest.json declares ${JSON.stringify(declared)}`,
+    );
+    return;
+  }
+
+  const missing = declared.filter((permission) => !listed.includes(permission));
+  const extra = listed.filter((permission) => !declared.includes(permission));
+  if (missing.length > 0 || extra.length > 0) {
+    fail(
+      `.dbx-store.json permissions must match manifest.json exactly: ` +
+        `missing from the listing ${JSON.stringify(missing)}, not declared in the manifest ${JSON.stringify(extra)}`,
+    );
+    return;
+  }
+  return declared.length;
+}
+
 function main() {
   const raw = readFileSync(path.join(repoRoot, "manifest.json"), "utf8");
   let manifest;
@@ -196,6 +237,7 @@ function main() {
     checkContribution(contribution, index, contributionIds);
   }
   checkLocalizations(manifest, contributionIds);
+  const mirroredPermissions = checkStoreListing(manifest);
 
   if (problems.length > 0) {
     console.error(`[check-manifest] ${problems.length} problem(s):`);
@@ -206,7 +248,8 @@ function main() {
   }
   console.log(
     `[check-manifest] ok - ${contributions.length} contribution(s), ${contributionIds.size} id(s), ` +
-      `${Object.keys(manifest.localizations ?? {}).length} localization(s)`,
+      `${Object.keys(manifest.localizations ?? {}).length} localization(s), ` +
+      `${mirroredPermissions ?? 0} permission(s) mirrored to the store listing`,
   );
 }
 
