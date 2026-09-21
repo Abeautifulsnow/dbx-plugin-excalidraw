@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	dbxpluginsdk "github.com/t8y2/dbx/plugins/sdk/go/dbx-plugin-sdk"
 )
@@ -55,6 +56,20 @@ func mapStoreError(err error) *dbxpluginsdk.PluginError {
 		return appError(-32000, "DOCUMENT_TOO_LARGE", "The export is too large.")
 	case errors.Is(err, errExportChunk):
 		return appError(-32602, "INVALID_EXPORT_CHUNK", err.Error())
+	case errors.Is(err, errFSPath):
+		return appError(-32602, "INVALID_PATH", "That path is not a valid Excalidraw Studio path.")
+	case errors.Is(err, errFSNotFound):
+		return appError(-32000, "NOT_FOUND", "That item no longer exists.")
+	case errors.Is(err, errFSExists):
+		return appError(-32000, "ALREADY_EXISTS", "An item with that name already exists.")
+	case errors.Is(err, errFSTooLarge):
+		return appError(-32000, "TOO_LARGE", err.Error())
+	case errors.Is(err, errFSReadOnly):
+		return appError(-32000, "READ_ONLY", "Exports are produced by the editor and cannot be written here.")
+	case errors.Is(err, errFSUnsupported):
+		return appError(-32000, "NOT_SUPPORTED", err.Error())
+	case errors.Is(err, errFSStale):
+		return appError(-32000, "CONFLICT", "The item changed since it was read; reopen it and retry.")
 	default:
 		return appError(-32000, "DOCUMENT_SAVE_FAILED", "A local storage error occurred.")
 	}
@@ -67,12 +82,39 @@ func decodeParams(params json.RawMessage, target any) *dbxpluginsdk.PluginError 
 	return nil
 }
 
+// requireFilesystemProvider rejects requests aimed at a provider this plugin
+// does not declare, so a stale host binding cannot silently address a
+// different mount.
+func requireFilesystemProvider(providerID string) *dbxpluginsdk.PluginError {
+	if providerID != filesystemProviderID {
+		return appError(-32602, "INVALID_REQUEST", "Unknown filesystem provider.")
+	}
+	return nil
+}
+
 func (p *plugin) Handle(
 	_ dbxpluginsdk.RequestContext,
 	method string,
 	params json.RawMessage,
 	_ *dbxpluginsdk.Emitter,
 ) (any, *dbxpluginsdk.PluginError) {
+	// Routing by family keeps each handler small; the method names are already
+	// namespaced ("document/list", "asset/putChunk").
+	switch {
+	case strings.HasPrefix(method, "document/"):
+		return p.handleDocument(method, params)
+	case strings.HasPrefix(method, "asset/"):
+		return p.handleAsset(method, params)
+	case strings.HasPrefix(method, "export/"):
+		return p.handleExport(method, params)
+	case strings.HasPrefix(method, "filesystem/"):
+		return p.handleFilesystem(method, params)
+	default:
+		return nil, dbxpluginsdk.MethodNotFound(method)
+	}
+}
+
+func (p *plugin) handleDocument(method string, params json.RawMessage) (any, *dbxpluginsdk.PluginError) {
 	switch method {
 	case "document/list":
 		documents, err := p.store.ListDocuments()
@@ -155,6 +197,13 @@ func (p *plugin) Handle(
 		}
 		return map[string]any{"success": true}, nil
 
+	default:
+		return nil, dbxpluginsdk.MethodNotFound(method)
+	}
+}
+
+func (p *plugin) handleAsset(method string, params json.RawMessage) (any, *dbxpluginsdk.PluginError) {
+	switch method {
 	case "asset/stat":
 		var request struct {
 			Hash string `json:"hash"`
@@ -212,6 +261,13 @@ func (p *plugin) Handle(
 			"mimeType":   mimeType,
 		}, nil
 
+	default:
+		return nil, dbxpluginsdk.MethodNotFound(method)
+	}
+}
+
+func (p *plugin) handleExport(method string, params json.RawMessage) (any, *dbxpluginsdk.PluginError) {
+	switch method {
 	case "export/write":
 		// The sandboxed UI cannot trigger browser downloads, so rendered
 		// exports are streamed here and written under <base>/exports/.
@@ -237,6 +293,154 @@ func (p *plugin) Handle(
 			return nil, mapStoreError(err)
 		}
 		return map[string]any{"received": received, "complete": complete, "path": path}, nil
+
+	default:
+		return nil, dbxpluginsdk.MethodNotFound(method)
+	}
+}
+
+// handleFilesystem serves the `excalidraw:` filesystem provider, dispatched
+// along the same line the host's capability model uses: reads and mutations are
+// separately declared, so they are separately handled.
+func (p *plugin) handleFilesystem(method string, params json.RawMessage) (any, *dbxpluginsdk.PluginError) {
+	switch method {
+	case "filesystem/list", "filesystem/read":
+		return p.handleFilesystemRead(method, params)
+	case "filesystem/write", "filesystem/delete", "filesystem/rename", "filesystem/createDirectory":
+		return p.handleFilesystemMutate(method, params)
+	default:
+		return nil, dbxpluginsdk.MethodNotFound(method)
+	}
+}
+
+// handleFilesystemRead serves the operations gated by the provider's `read`
+// capability. Every method carries the provider id the host resolved, which is
+// checked so a stale host binding cannot silently address a different mount.
+func (p *plugin) handleFilesystemRead(method string, params json.RawMessage) (any, *dbxpluginsdk.PluginError) {
+	switch method {
+	case "filesystem/list":
+		var request struct {
+			ProviderID string `json:"providerId"`
+			URI        string `json:"uri"`
+			Cursor     string `json:"cursor"`
+			Limit      int    `json:"limit"`
+		}
+		if pluginError := decodeParams(params, &request); pluginError != nil {
+			return nil, pluginError
+		}
+		if pluginError := requireFilesystemProvider(request.ProviderID); pluginError != nil {
+			return nil, pluginError
+		}
+		entries, nextCursor, err := p.store.FSList(request.URI, request.Cursor, request.Limit)
+		if err != nil {
+			return nil, mapStoreError(err)
+		}
+		response := map[string]any{"entries": entries}
+		if nextCursor != "" {
+			response["nextCursor"] = nextCursor
+		}
+		return response, nil
+
+	case "filesystem/read":
+		var request struct {
+			ProviderID string `json:"providerId"`
+			URI        string `json:"uri"`
+			MaxBytes   int64  `json:"maxBytes"`
+		}
+		if pluginError := decodeParams(params, &request); pluginError != nil {
+			return nil, pluginError
+		}
+		if pluginError := requireFilesystemProvider(request.ProviderID); pluginError != nil {
+			return nil, pluginError
+		}
+		data, contentType, etag, err := p.store.FSRead(request.URI, request.MaxBytes)
+		if err != nil {
+			return nil, mapStoreError(err)
+		}
+		return map[string]any{
+			"dataBase64":  base64.StdEncoding.EncodeToString(data),
+			"contentType": contentType,
+			// An oversized file is rejected above rather than truncated, so a
+			// partial document can never be mistaken for a complete one.
+			"truncated": false,
+			"etag":      etag,
+		}, nil
+
+	default:
+		return nil, dbxpluginsdk.MethodNotFound(method)
+	}
+}
+
+// handleFilesystemMutate serves the operations gated by the provider's write,
+// delete and rename capabilities. Like the read handler, each method re-checks
+// the provider id the host resolved.
+func (p *plugin) handleFilesystemMutate(method string, params json.RawMessage) (any, *dbxpluginsdk.PluginError) {
+	switch method {
+	case "filesystem/write":
+		var request struct {
+			ProviderID string `json:"providerId"`
+			URI        string `json:"uri"`
+			DataBase64 string `json:"dataBase64"`
+			Create     bool   `json:"create"`
+			Overwrite  bool   `json:"overwrite"`
+			ETag       string `json:"etag"`
+		}
+		if pluginError := decodeParams(params, &request); pluginError != nil {
+			return nil, pluginError
+		}
+		if pluginError := requireFilesystemProvider(request.ProviderID); pluginError != nil {
+			return nil, pluginError
+		}
+		data, err := base64.StdEncoding.DecodeString(request.DataBase64)
+		if err != nil {
+			return nil, appError(-32602, "INVALID_REQUEST", "Filesystem write is not valid base64.")
+		}
+		entry, err := p.store.FSWrite(request.URI, data, request.Create, request.Overwrite, request.ETag)
+		if err != nil {
+			return nil, mapStoreError(err)
+		}
+		return map[string]any{"success": true, "entry": entry}, nil
+
+	case "filesystem/delete":
+		var request struct {
+			ProviderID string `json:"providerId"`
+			URI        string `json:"uri"`
+			Recursive  bool   `json:"recursive"`
+		}
+		if pluginError := decodeParams(params, &request); pluginError != nil {
+			return nil, pluginError
+		}
+		if pluginError := requireFilesystemProvider(request.ProviderID); pluginError != nil {
+			return nil, pluginError
+		}
+		if err := p.store.FSDelete(request.URI, request.Recursive); err != nil {
+			return nil, mapStoreError(err)
+		}
+		return map[string]any{"success": true}, nil
+
+	case "filesystem/rename":
+		var request struct {
+			ProviderID string `json:"providerId"`
+			SourceURI  string `json:"sourceUri"`
+			TargetURI  string `json:"targetUri"`
+			Overwrite  bool   `json:"overwrite"`
+		}
+		if pluginError := decodeParams(params, &request); pluginError != nil {
+			return nil, pluginError
+		}
+		if pluginError := requireFilesystemProvider(request.ProviderID); pluginError != nil {
+			return nil, pluginError
+		}
+		entry, err := p.store.FSRename(request.SourceURI, request.TargetURI, request.Overwrite)
+		if err != nil {
+			return nil, mapStoreError(err)
+		}
+		return map[string]any{"success": true, "entry": entry}, nil
+
+	case "filesystem/createDirectory":
+		// The provider exposes a flat two-directory layout; offering folder
+		// creation would imply a hierarchy that does not exist.
+		return nil, appError(-32000, "NOT_SUPPORTED", "Excalidraw Studio has no folders.")
 
 	default:
 		return nil, dbxpluginsdk.MethodNotFound(method)

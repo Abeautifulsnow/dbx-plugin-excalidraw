@@ -12,10 +12,5 @@
 
 # Built plugin UI emitted by `npm --prefix frontend run build`
 /ui/
-
-# Local Go workspace that wires the sidecar SDK (dev only; the CLI/dev host
-# maintains its own equivalent when building)
-/go.work
-/go.work.sum
 out/
 outputs/

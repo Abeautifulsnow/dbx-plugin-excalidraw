@@ -74,17 +74,33 @@ function ghApi(method, apiPath, body, token) {
   process.exit(1);
 }
 
-function main() {
-  const args = process.argv.slice(2);
-  const prerelease = args.includes("--prerelease");
-  const extraNotesIndex = args.indexOf("--notes");
-  const extraNotes = extraNotesIndex >= 0 ? args[extraNotesIndex + 1] : "";
+/** Runs a gate script and aborts the release when it fails. */
+function requireScript(name, failureMessage) {
+  const result = spawnSync(process.execPath, [path.join(repoRoot, "scripts", name)], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  if (result.status !== 0) {
+    console.error(`[release] ${failureMessage}`);
+    process.exit(1);
+  }
+}
 
+/**
+ * Everything that must hold before a tag is created: a clean, synced main whose
+ * manifest and version declarations agree. Exits on the first failure.
+ */
+function preflight() {
   // 1. Repository safety checks.
   if (git(["status", "--porcelain"])) {
     console.error("[release] worktree is dirty; commit or stash first");
     process.exit(1);
   }
+  // The host kills the sidecar when the version it reports in the handshake
+  // disagrees with the manifest, so a drifted tree must not be released.
+  requireScript("sync-version.mjs", "version declarations disagree; run `node scripts/sync-version.mjs --write` and commit");
+  requireScript("check-manifest.mjs", "manifest.json did not pass its structural checks");
+
   const branch = git(["rev-parse", "--abbrev-ref", "HEAD"]);
   if (branch !== "main") {
     console.error(`[release] current branch is ${branch}; releases are cut from main`);
@@ -97,6 +113,15 @@ function main() {
     console.error(`[release] main is not in sync with origin (ahead ${ahead}, behind ${behind}); push or pull first`);
     process.exit(1);
   }
+}
+
+function main() {
+  const args = process.argv.slice(2);
+  const prerelease = args.includes("--prerelease");
+  const extraNotesIndex = args.indexOf("--notes");
+  const extraNotes = extraNotesIndex >= 0 ? args[extraNotesIndex + 1] : "";
+
+  preflight();
 
   // 2. Version from manifest.json — the store validates against it.
   const manifest = JSON.parse(readFileSync(path.join(repoRoot, "manifest.json"), "utf8"));

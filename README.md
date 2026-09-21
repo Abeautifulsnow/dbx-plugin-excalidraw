@@ -12,10 +12,61 @@ leaving DBX — no cloud service involved.
   PNG/SVG/`.excalidraw` export, all preserved as upstream ships it.
 - **Documents** — home page with recent diagrams, search, rename, delete, and
   `.excalidraw` import. Document data stays standard-Excalidraw-compatible.
+- **Result canvas** — a `result-view` contribution adds *Sketch on canvas* to
+  the query-result toolbar. It lays the result set out as an annotatable table
+  on a fresh canvas instead of trying to replace the data grid; see
+  [Result canvas](#result-canvas).
+- **Filesystem provider** — an `excalidraw:` scheme exposes the document store
+  as browsable `.excalidraw` files, so DBX can open diagrams without going
+  through the plugin UI; see [Filesystem provider](#filesystem-provider).
 - **Persistence** — a Go sidecar owns durable local storage with atomic
   writes, per-document metadata sidecars, and startup reconciliation.
 - **Autosave** — debounced (~1 s) with a serialized save queue; save status is
   always visible (Saved / Saving… / Unsaved / Save failed).
+
+### Result canvas
+
+> **Host requirement.** The result-view entry point needs a DBX build containing
+> `4f3be8ccf fix(plugin): resolve result-view by UI contribution` (2026-09-20),
+> which resolves the tab through `findUiContribution`. The contribution was
+> introduced earlier by `b5072f1a3`, but the tab was resolved with
+> `findWorkbench` at the time, so on any host released before that fix the
+> toolbar button opens a tab that fails to load with `workbenchUnavailable` —
+> the plugin UI never starts. The contribution is deliberately kept in the
+> manifest ahead of that release: `engines.dbx` is **not** raised, because doing
+> so would make the whole plugin uninstallable on every currently-released host,
+> which is a worse trade than one inert entry point. Revisit `engines.dbx` once
+> the fix has shipped.
+
+Opened from the results toolbar of a query tab, the plugin receives a bounded
+snapshot from the host:
+
+```json
+{ "connectionId": "...", "database": "...", "sql": "...",
+  "result": { "columns": ["..."], "rows": [["..."]], "truncated": true } }
+```
+
+The host caps the payload at 500 rows and about 2 MiB of context, so the page
+lets you choose how many rows to lay out and reports honestly what it left
+off — rows dropped to fit the scene budget, columns beyond the cap, and the
+host's own truncation. Cells are truncated to 60 characters and newlines are
+flattened so every table row keeps a fixed height.
+
+### Filesystem provider
+
+| URI | Contents |
+| --- | --- |
+| `excalidraw:/` | `documents/`, `exports/` |
+| `excalidraw:/documents/<uuid>.excalidraw` | one diagram |
+| `excalidraw:/exports/<name>` | files written by the export flow (read-only) |
+
+Because scenes are stored with image `dataURL`s stripped, reads rehydrate the
+referenced assets, so a file copied out of this filesystem is a standard,
+self-contained `.excalidraw` document. Writes run the same stripping in
+reverse. A read that would exceed the byte budget the host asked for fails
+loudly rather than handing back a truncated document. `mkdir` is not declared:
+the layout is flat and offering folder creation would imply a hierarchy that
+does not exist.
 
 ### Storage model
 
@@ -63,16 +114,32 @@ npm run typecheck   # tsc --noEmit
 npm test            # vitest unit tests (persistence chunking, api adapter, ...)
 ```
 
-Backend tests and an end-to-end protocol smoke (the SDK module is not on
-public Go proxies, so the scripts wire a temporary go.work to the CLI's
-bundled SDK sources; requires Node.js 22+ and Go):
+`backend/go.mod` replaces the SDK with the vendored copy under
+`backend/third_party/dbx-plugin-sdk`, so vet, test, build and the smoke run all
+resolve it offline — no CLI install, no `go.work`, and no network. Keep the
+vendored copy in step with the CLI's SDK when the CLI is upgraded; the smoke
+script warns when the two have drifted. Requires Node.js 22+ and Go.
 
 ```bash
 node scripts/backend-test.mjs   # go vet + unit tests for the store layer
 node scripts/sidecar-smoke.mjs  # spawns the sidecar and drives stdio JSON-RPC:
                                 # handshake, create/save/get, 1.2 MiB chunked
-                                # asset upload + byte-exact round-trip
+                                # asset upload + byte-exact round-trip, and the
+                                # filesystem provider's list/read/write/guards
 ```
+
+### Checks
+
+```bash
+node scripts/check-manifest.mjs  # contribution ids, required fields, icons that
+                                 # exist, localization keys that resolve
+node scripts/sync-version.mjs    # manifest.json is the source of truth; fails on
+                                 # drift in backend/main.go or frontend/package.json
+node scripts/sync-version.mjs --write   # rewrite the derived copies
+```
+
+All of these run in CI (`.github/workflows/ci.yml`) on every push and pull
+request, together with the frontend typecheck, unit tests and build.
 
 ## Package
 
@@ -87,14 +154,18 @@ on the user's machine.
 
 ## Release
 
-1. Bump `version` in `manifest.json`, commit, then run:
+1. Bump `version` in `manifest.json`, propagate it, commit, then run:
 
    ```bash
-   node scripts/release.mjs              # official release
-   node scripts/release.mjs --prerelease # release candidate (store sync skips these)
+   node scripts/sync-version.mjs --write   # mirrors the version into the sidecar
+                                           # identity and the frontend package
+   node scripts/release.mjs                # official release
+   node scripts/release.mjs --prerelease   # release candidate (store sync skips these)
    ```
 
-   The script refuses to run on a dirty or unsynced tree, derives the tag
+   `release.mjs` re-runs the version and manifest guards before tagging, so a
+   drifted tree cannot be released. The script refuses to run on a dirty or
+   unsynced tree, derives the tag
    from the manifest version (the store validates against it), generates
    notes from `.dbx-store.json` plus the commit log, and creates the GitHub
    Release with the credentials git already has. CI then builds the frontend

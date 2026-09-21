@@ -489,3 +489,128 @@ body {
     transform: rotate(360deg);
   }
 }
+
+/* ---------------------------------------------------------------- result view */
+
+.result-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  min-height: 100%;
+  overflow: auto;
+}
+
+.result-view__subtitle {
+  margin: 4px 0 0;
+  color: var(--st-muted);
+  font-size: 13px;
+}
+
+.result-view__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.result-view__pill {
+  padding: 4px 10px;
+  border: 1px solid var(--st-border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--st-muted);
+}
+
+.result-view__pill--warn {
+  border-color: var(--st-danger);
+  color: var(--st-danger);
+}
+
+.result-view__sql {
+  border: 1px solid var(--st-border);
+  border-radius: 8px;
+  background: var(--st-surface);
+  padding: 8px 12px;
+}
+
+.result-view__sql summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--st-muted);
+}
+
+.result-view__sql pre {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.result-view__controls {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.result-view__control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--st-muted);
+}
+
+.result-view__control .input {
+  width: auto;
+}
+
+.result-view__preview {
+  border: 1px solid var(--st-border);
+  border-radius: 10px;
+  background: var(--st-surface);
+  overflow: hidden;
+}
+
+.result-view__preview table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
+.result-view__preview th,
+.result-view__preview td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--st-border);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-view__preview th {
+  background: color-mix(in srgb, var(--st-text) 6%, transparent);
+  font-weight: 600;
+}
+
+.result-view__preview tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.result-view__note {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--st-muted);
+  border-top: 1px solid var(--st-border);
+}
+
+.result-view__return {
+  margin: 12px 20px 0;
+  align-self: flex-start;
+}

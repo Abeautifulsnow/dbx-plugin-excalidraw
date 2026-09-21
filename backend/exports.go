@@ -95,8 +95,9 @@ func (s *Store) WriteExportChunk(jobID, name string, size, offset int64, data []
 
 // validateExportName accepts any printable single-path filename (CJK
 // included) but rejects separators, Windows-reserved characters, control
-// characters, and dotfiles so a crafted name cannot escape the exports
-// directory or become an unreferenceable file on Windows.
+// characters, dotfiles, and Windows device names so a crafted name cannot
+// escape the exports directory, silently address a device, or become an
+// unreferenceable file on Windows.
 func validateExportName(name string) error {
 	if name == "" || utf8.RuneCountInString(name) > maxExportNameRunes {
 		return errExportName
@@ -106,6 +107,9 @@ func validateExportName(name string) error {
 	}
 	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, " ") ||
 		strings.HasSuffix(name, ".") || strings.HasSuffix(name, " ") {
+		return errExportName
+	}
+	if isWindowsDeviceName(name) {
 		return errExportName
 	}
 	for _, r := range name {

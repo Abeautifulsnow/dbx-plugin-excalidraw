@@ -80,6 +80,12 @@ func (s *Store) ListDocuments() ([]DocumentMeta, error) {
 func (s *Store) CreateDocument(name string) (DocumentMeta, error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+	return s.createDocumentLocked(name)
+}
+
+// createDocumentLocked mints a document, defaulting the name when the caller
+// supplies an empty one. Callers must hold the store mutex.
+func (s *Store) createDocumentLocked(name string) (DocumentMeta, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = s.nextUntitledName()
@@ -249,6 +255,12 @@ func (s *Store) RenameDocument(id, name string) (DocumentMeta, error) {
 func (s *Store) DeleteDocument(id string) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+	return s.deleteDocumentLocked(id)
+}
+
+// deleteDocumentLocked removes a document's scene and metadata sidecar.
+// Callers must hold the store mutex.
+func (s *Store) deleteDocumentLocked(id string) error {
 	if err := validateDocumentID(id); err != nil {
 		return err
 	}

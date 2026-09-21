@@ -11,6 +11,10 @@
     "dbx": ">=0.5.68",
     "host_api": "1"
   },
+  "permissions": [
+    "host.workbench",
+    "host.filesystem"
+  ],
   "entrypoints": {
     "backend": {
       "executable": "bin/dbx-plugin-excalidraw"
@@ -27,6 +31,30 @@
       "label": "Excalidraw Studio",
       "description": "A local-first Excalidraw workspace for diagrams and sketches.",
       "icon": "assets/plugin.svg"
+    },
+    {
+      "type": "result-view",
+      "id": "io.dbx.excalidraw.result-view",
+      "label": "Sketch on canvas",
+      "description": "Drop this result set onto an Excalidraw canvas and annotate it.",
+      "icon": "assets/plugin.svg"
+    },
+    {
+      "type": "filesystem-provider",
+      "id": "io.dbx.excalidraw.documents",
+      "label": "Excalidraw Studio",
+      "description": "Browse your diagrams as .excalidraw files.",
+      "icon": "assets/plugin.svg",
+      "schemes": [
+        "excalidraw"
+      ],
+      "root_uri": "excalidraw:/",
+      "capabilities": [
+        "read",
+        "write",
+        "delete",
+        "rename"
+      ]
     }
   ],
   "localizations": {
@@ -37,6 +65,14 @@
         "io.dbx.excalidraw.workbench": {
           "label": "Excalidraw Studio",
           "description": "本地优先的 Excalidraw 画图与草图工作台。"
+        },
+        "io.dbx.excalidraw.result-view": {
+          "label": "贴到画布",
+          "description": "把这份结果集铺到 Excalidraw 画布上，随手批注。"
+        },
+        "io.dbx.excalidraw.documents": {
+          "label": "Excalidraw Studio",
+          "description": "以 .excalidraw 文件的形式浏览你的图表。"
         }
       }
     }

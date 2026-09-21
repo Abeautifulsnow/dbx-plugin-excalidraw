@@ -44,6 +44,23 @@ export interface Strings {
   backendMissingBody: string;
   renameFailed: string;
   deleteFailed: string;
+  resultViewTitle: string;
+  resultViewSubtitle: string;
+  resultViewNoRows: string;
+  resultViewNoContext: string;
+  resultViewNoContextBody: string;
+  resultViewRows: string;
+  resultViewRowLimit: string;
+  resultViewCreate: string;
+  resultViewCreating: string;
+  resultViewFailed: string;
+  resultViewHostTruncated: string;
+  resultViewPreviewNote: string;
+  resultViewIncluded: string;
+  resultViewOmitted: string;
+  resultViewOmittedColumns: string;
+  resultViewSql: string;
+  resultViewOpenExisting: string;
 }
 
 const en: Strings = {
@@ -90,6 +107,23 @@ const en: Strings = {
   backendMissingBody: "Your current unsaved canvas is still open.",
   renameFailed: "Rename failed.",
   deleteFailed: "Delete failed.",
+  resultViewTitle: "Sketch this result",
+  resultViewSubtitle: "Put the result set on a canvas, then draw on it.",
+  resultViewNoRows: "This result has no rows to lay out.",
+  resultViewNoContext: "No result set was passed to this tab.",
+  resultViewNoContextBody: "Open it from the results toolbar of a query tab.",
+  resultViewRows: "Rows on canvas",
+  resultViewRowLimit: "Up to {n}",
+  resultViewCreate: "Create canvas",
+  resultViewCreating: "Creating…",
+  resultViewFailed: "Could not create the canvas.",
+  resultViewHostTruncated: "DBX passed the first {n} rows only.",
+  resultViewPreviewNote: "Showing the first {n} rows of {total}.",
+  resultViewIncluded: "{n} rows × {m} columns on the canvas",
+  resultViewOmitted: "{n} rows left off to keep the canvas a workable size",
+  resultViewOmittedColumns: "{n} columns left off",
+  resultViewSql: "SQL",
+  resultViewOpenExisting: "Open a diagram",
 };
 
 const zh: Strings = {
@@ -136,6 +170,23 @@ const zh: Strings = {
   backendMissingBody: "当前未保存的画布仍保持打开。",
   renameFailed: "重命名失败。",
   deleteFailed: "删除失败。",
+  resultViewTitle: "把这份结果贴到画布",
+  resultViewSubtitle: "结果集铺到画布上，就可以随手圈画批注了。",
+  resultViewNoRows: "这份结果没有数据行可铺。",
+  resultViewNoContext: "这个标签页没有拿到结果集。",
+  resultViewNoContextBody: "请从查询结果工具栏打开它。",
+  resultViewRows: "铺到画布的行数",
+  resultViewRowLimit: "最多 {n} 行",
+  resultViewCreate: "创建画布",
+  resultViewCreating: "创建中…",
+  resultViewFailed: "无法创建画布。",
+  resultViewHostTruncated: "DBX 只传递了前 {n} 行。",
+  resultViewPreviewNote: "预览 {total} 行中的前 {n} 行。",
+  resultViewIncluded: "画布上共 {n} 行 × {m} 列",
+  resultViewOmitted: "为保证画布可用，省略了 {n} 行",
+  resultViewOmittedColumns: "省略了 {n} 列",
+  resultViewSql: "SQL",
+  resultViewOpenExisting: "打开已有图表",
 };
 
 export const strings: Record<Lang, Strings> = { en, zh };
@@ -146,4 +197,11 @@ export function pickLang(locale: string | undefined): Lang {
 
 export function format(template: string, value: number | string): string {
   return template.replace("{n}", String(value));
+}
+
+/** Fills every `{key}` placeholder; used where a string carries more than one. */
+export function formatAll(template: string, values: Record<string, number | string>): string {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
+    key in values ? String(values[key]) : match,
+  );
 }

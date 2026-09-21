@@ -78,6 +78,11 @@ function main() {
     homepage: store.homepage,
     license: store.license,
     localizations: store.localizations,
+    // Mirrored from the manifest so the store listing discloses the same
+    // permissions the host will show at install time. Omitting this made the
+    // catalog claim the plugin requests nothing while the manifest asked for
+    // filesystem access.
+    permissions: manifest.permissions ?? [],
     targets: releaseCandidates.artifacts.map((artifact) => ({
       target: artifact.target,
       url: `https://github.com/${owner}/${repo}/releases/download/${tag}/${artifact.url}`,

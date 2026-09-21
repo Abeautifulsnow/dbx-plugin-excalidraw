@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Manifest and version drift fail at install time in the host (the sidecar is
+  # killed when the handshake version disagrees with the manifest), so they are
+  # gated before anything is built.
+  guards:
+    name: Manifest and version guards
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node scripts/check-manifest.mjs
+      - run: node scripts/sync-version.mjs
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # The build is the only step that exercises the font vendoring and the
+      # ui/ output contract that `dbx-plugin package` consumes.
+      - run: npm run build
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          # The SDK is replaced by the vendored copy under backend/third_party,
+          # so this module has no external requirements and no go.sum to key on.
+          cache-dependency-path: backend/go.mod
+      # backend/go.mod replaces the SDK with the vendored copy under
+      # backend/third_party, so vet and test need no network and no CLI install.
+      - run: go vet ./...
+        working-directory: backend
+      - run: go test ./...
+        working-directory: backend
