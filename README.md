@@ -63,6 +63,8 @@ off — rows dropped to fit the scene budget, columns beyond the cap, and the
 host's own truncation. Cells are truncated to 60 characters and newlines are
 flattened so every table row keeps a fixed height.
 
+![Sketch on canvas in the query-result toolbar](docs/images/result-canvas-toolbar.png)
+
 ### Filesystem provider
 
 | URI | Contents |
