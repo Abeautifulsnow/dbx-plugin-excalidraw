@@ -143,7 +143,9 @@ function main() {
   const token = githubToken();
 
   // 3. Release notes: store releaseNotes + commits since the previous tag.
-  const previousTag = git(["describe", "--tags", "--abbrev=0", `${tag}^`], { stdio: undefined }) || "";
+  // The tag being created does not exist yet — GitHub mints it from the API
+  // call below — so the previous tag is the latest one reachable from HEAD.
+  const previousTag = git(["describe", "--tags", "--abbrev=0", "HEAD"]) || "";
   const logRange = previousTag ? `${previousTag}..HEAD` : "HEAD";
   const commits = git(["log", "--no-merges", "--pretty=format:- %s", logRange])
     .split("\n")
