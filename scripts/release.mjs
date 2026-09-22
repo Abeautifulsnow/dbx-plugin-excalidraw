@@ -16,7 +16,8 @@
 // After it finishes, watch the Actions tab; assets appear on the release
 // once every platform job succeeds.
 import { execSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -52,26 +53,38 @@ function githubToken() {
 }
 
 function ghApi(method, apiPath, body, token) {
-  const payload = body ? JSON.stringify(body) : "";
-  const attempts = ["", PROXY_FALLBACK];
-  let lastError = "";
-  for (const proxy of attempts) {
-    const args = ["-sS", "-X", method, "-H", `Authorization: Bearer ${token}`, "-H", "Accept: application/vnd.github+json"];
-    if (payload) {
-      args.push("-H", "Content-Type: application/json", "-d", payload);
-    }
-    if (proxy) {
-      args.push("-x", proxy);
-    }
-    args.push(`https://api.github.com${apiPath}`);
-    const result = spawnSync("curl", args, { encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
-    if (result.status === 0 && result.stdout.trim()) {
-      return JSON.parse(result.stdout);
-    }
-    lastError = (result.stderr || `curl exit ${result.status}`).trim();
+  // The payload goes through a file: node's Windows argument quoting mangles
+  // multi-line JSON handed to curl with -d, and GitHub then answers
+  // "Problems parsing JSON" for a payload that is valid where it was built.
+  const payloadFile = body ? path.join(tmpdir(), `dbx-release-payload-${process.pid}.json`) : "";
+  if (body) {
+    writeFileSync(payloadFile, JSON.stringify(body));
   }
-  console.error(`[release] GitHub API call failed: ${lastError}`);
-  process.exit(1);
+  try {
+    const attempts = ["", PROXY_FALLBACK];
+    let lastError = "";
+    for (const proxy of attempts) {
+      const args = ["-sS", "-X", method, "-H", `Authorization: Bearer ${token}`, "-H", "Accept: application/vnd.github+json"];
+      if (payloadFile) {
+        args.push("-H", "Content-Type: application/json", "-d", `@${payloadFile}`);
+      }
+      if (proxy) {
+        args.push("-x", proxy);
+      }
+      args.push(`https://api.github.com${apiPath}`);
+      const result = spawnSync("curl", args, { encoding: "utf8", maxBuffer: 10 * 1024 * 1024 });
+      if (result.status === 0 && result.stdout.trim()) {
+        return JSON.parse(result.stdout);
+      }
+      lastError = (result.stderr || `curl exit ${result.status}`).trim();
+    }
+    console.error(`[release] GitHub API call failed: ${lastError}`);
+    process.exit(1);
+  } finally {
+    if (payloadFile) {
+      rmSync(payloadFile, { force: true });
+    }
+  }
 }
 
 /** Runs a gate script and aborts the release when it fails. */
