@@ -386,6 +386,40 @@ body {
   margin: 4px 0;
 }
 
+/* The export receipt: it reports a path the user cannot rediscover from inside
+   the plugin, so unlike a toast it waits to be dismissed. */
+.export-receipt {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--st-border);
+  background: color-mix(in srgb, var(--st-accent) 10%, var(--st-surface));
+  font-size: 12px;
+  color: var(--st-text);
+}
+
+/* A path carries no spaces to break on, and one that overflows the bar would
+   hide exactly the part that says where the file is. */
+.export-receipt__message {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.export-receipt .btn {
+  flex: none;
+  padding: 4px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.export-receipt .btn--icon {
+  padding: 4px 8px;
+}
+
 /* ---------- Shared overlays ---------- */
 
 .notice {
@@ -475,10 +509,6 @@ body {
 
 .toast--error {
   background: var(--st-danger);
-}
-
-.toast--success {
-  background: var(--st-accent);
 }
 
 .spinner {

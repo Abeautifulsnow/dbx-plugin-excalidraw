@@ -12,9 +12,14 @@ import { excalidrawLangCode, format, type Strings } from "./i18n";
 
 type SaveStatus = "saved" | "dirty" | "saving" | "error";
 type Phase = "loading" | "ready" | "corrupt" | "error";
-type Toast = { message: string; kind: "error" | "success" };
 /** Where an export lands: the plugin's own folder, or wherever the user picks. */
 type ExportDelivery = "folder" | "dialog";
+/**
+ * The last export that reached the disk, kept on screen until the user
+ * dismisses it. A toast is too short-lived for the one fact the user cannot
+ * rediscover from inside the plugin — where the file actually went.
+ */
+type ExportReceipt = { message: string; inPluginFolder: boolean };
 /** The live scene, as the editor last reported it. */
 type SceneSnapshot = { elements: readonly ExcalidrawElement[]; appState: AppState };
 
@@ -28,16 +33,22 @@ interface ExportMenuActions {
  * and the sidecar. Kept out of the component so its body stays a description of
  * what is on screen; every dependency is passed in because none of it is state
  * the render needs.
+ *
+ * Two report channels, for two different kinds of news: `reportReceipt`
+ * carries the location of a file that is now on disk and stays until dismissed,
+ * `report` carries a transient failure and nothing else.
  */
 function useExportMenuActions(params: {
   meta: DocumentMeta | null;
   snapshot: RefObject<SceneSnapshot | null>;
   files: () => Record<string, BinaryFileData>;
   t: Strings;
-  report: (toast: Toast) => void;
+  report: (message: string) => void;
+  /** Only ever called with a location that is now on disk. */
+  reportReceipt: (receipt: ExportReceipt) => void;
   closeMenu: () => void;
 }): ExportMenuActions {
-  const { meta, snapshot, files, t, report, closeMenu } = params;
+  const { meta, snapshot, files, t, report, reportReceipt, closeMenu } = params;
 
   const exportAs = async (kind: ExportKind, delivery: ExportDelivery) => {
     closeMenu();
@@ -47,6 +58,12 @@ function useExportMenuActions(params: {
     }
     const { elements, appState } = current;
     const referenced = files();
+
+    // The previous receipt is left alone until this attempt actually lands a
+    // file: a cancelled dialog and a failed write both leave that earlier file
+    // on disk, so erasing its location up front would lose the only record of
+    // it. Nothing shows a path that is not on disk, because only a success
+    // reaches `reportReceipt`.
 
     // The plugin folder is the default and the fallback: it is the only delivery
     // whose bytes have been verified end to end. "Save as…" asks the host for its
@@ -59,7 +76,7 @@ function useExportMenuActions(params: {
         // A null path is the user dismissing the dialog, which is not a failure
         // and needs no message.
         if (path) {
-          report({ message: format(t.exportSavedPath, path), kind: "success" });
+          reportReceipt({ message: format(t.exportSavedPath, path), inPluginFolder: false });
         }
         return;
       } catch (error) {
@@ -70,10 +87,10 @@ function useExportMenuActions(params: {
     try {
       const path = await exportScene(kind, meta.name, elements, appState, referenced);
       const template = delivery === "dialog" ? t.exportSaveDialogFallback : t.exportSavedPath;
-      report({ message: format(template, path), kind: "success" });
+      reportReceipt({ message: format(template, path), inPluginFolder: true });
     } catch (error) {
       console.error("[editor] export failed", error);
-      report({ message: t.exportFailed, kind: "error" });
+      report(t.exportFailed);
     }
   };
 
@@ -83,7 +100,7 @@ function useExportMenuActions(params: {
       await revealInFileManager(target);
     } catch (error) {
       console.error("[editor] could not open the DBX file manager", error);
-      report({ message: t.revealFailed, kind: "error" });
+      report(t.revealFailed);
     }
   };
 
@@ -112,7 +129,8 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [titleDraft, setTitleDraft] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
-  const [toast, setToast] = useState<Toast | null>(null);
+  const [receipt, reportReceipt] = useState<ExportReceipt | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const latestRef = useRef<{ elements: readonly ExcalidrawElement[]; appState: AppState } | null>(null);
@@ -299,7 +317,7 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
     } catch (error) {
       console.error("[editor] rename failed", error);
       setTitleDraft(meta.name);
-      setToast({ message: t.renameFailed, kind: "error" });
+      setToast(t.renameFailed);
     }
   };
 
@@ -309,6 +327,7 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
     files: referencedFiles,
     t,
     report: setToast,
+    reportReceipt,
     closeMenu: () => setExportOpen(false),
   });
 
@@ -399,19 +418,38 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
           )}
         </div>
       </header>
+      {receipt && (
+        <div className="export-receipt" role="status">
+          <span className="export-receipt__message">{receipt.message}</span>
+          {receipt.inPluginFolder && (
+            <button type="button" className="btn btn--ghost" onClick={() => actions.reveal("exports")}>
+              {t.openExportsFolder}
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn--ghost btn--icon"
+            aria-label={t.dismiss}
+            title={t.dismiss}
+            onClick={() => reportReceipt(null)}
+          >
+            ×
+          </button>
+        </div>
+      )}
       {initialData && (
         <ExcalidrawEditor
           initialData={initialData}
           theme={theme}
           langCode={excalidrawLangCode(locale)}
           onChange={handleChange}
-          onExternalFileDrop={() => setToast({ message: t.dropBlocked, kind: "error" })}
+          onExternalFileDrop={() => setToast(t.dropBlocked)}
           onApi={(instance) => {
             apiRef.current = instance;
           }}
         />
       )}
-      {toast && <div className={`toast toast--${toast.kind}`}>{toast.message}</div>}
+      {toast && <div className="toast toast--error">{toast}</div>}
     </div>
   );
 }

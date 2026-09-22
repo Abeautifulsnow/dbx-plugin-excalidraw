@@ -15,6 +15,7 @@ export interface Strings {
   deleteBody: string;
   cancel: string;
   confirm: string;
+  dismiss: string;
   justNow: string;
   minutesAgo: string;
   hoursAgo: string;
@@ -85,6 +86,7 @@ const en: Strings = {
   deleteBody: "This diagram will be removed from Excalidraw Studio.",
   cancel: "Cancel",
   confirm: "Delete",
+  dismiss: "Dismiss",
   justNow: "just now",
   minutesAgo: "{n} min ago",
   hoursAgo: "{n} h ago",
@@ -155,6 +157,7 @@ const zh: Strings = {
   deleteBody: "该图表将从 Excalidraw Studio 中移除。",
   cancel: "取消",
   confirm: "删除",
+  dismiss: "关闭",
   justNow: "刚刚",
   minutesAgo: "{n} 分钟前",
   hoursAgo: "{n} 小时前",
