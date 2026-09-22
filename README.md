@@ -185,13 +185,31 @@ request, together with the frontend typecheck, unit tests and build.
 ## Package
 
 ```bash
+node scripts/package.mjs            # -> dist/io.dbx.excalidraw-<version>-<target>.dbxp
+node scripts/package.mjs --skip-ui  # backend-only change: reuse the ui/ on disk
+```
+
+The wrapper runs the version and manifest gates, rebuilds the frontend into
+`ui/`, and then calls the packager. Those are the two steps it replaces — the
+packager stages directories and never builds the UI itself, which makes running
+them by hand the easy way to ship a stale `ui/`:
+
+```bash
 npm --prefix frontend ci && npm --prefix frontend run build
 dbx-plugin package .
 ```
 
+Only the current host platform can be packaged. The packager takes a `--target`
+flag, but for a Go backend it changes nothing except the artifact name and the
+manifest's `bin/<target>/` path — the build never sets `GOOS` or `GOARCH`, so
+asking for another platform here would produce a host-native binary under that
+platform's label. CI builds the per-platform set, one native runner each.
+
 The `.dbxp` includes the built UI, vendored Excalidraw fonts, plugin icon, and
 the Go binary for the current platform. No Node.js or Go runtime is required
-on the user's machine.
+on the user's machine. Local builds are unsigned review candidates, which DBX
+refuses until the plugin center's "allow unsigned development packages" switch
+is on; install them with "Install .dbxp" or by dropping the file on that page.
 
 ## Release
 
