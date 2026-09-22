@@ -46,6 +46,31 @@ export interface ResultSetContext {
   };
 }
 
+export interface PlanCapabilities {
+  dbType: string;
+  dbVersion?: string;
+  supports: { estimatedPlan: boolean };
+  limits?: unknown;
+}
+
+export interface PlanRequest {
+  connectionId: string;
+  database?: string;
+  schema?: string;
+  sql: string;
+  mode: "estimated";
+  timeoutMs?: number;
+}
+
+export interface PlanResult {
+  dbType: string;
+  dbVersion?: string;
+  format: "json" | "xml" | "text";
+  rawPlan: unknown;
+  truncated: boolean;
+  warnings: string[];
+}
+
 /**
  * Child context the host reads back when opening a plugin filesystem. Only
  * `uri` is used for navigation; the host type-checks it and passes it through
@@ -68,6 +93,12 @@ export interface DbxPluginBridge {
   readAssetUrl(path: string): Promise<string>;
   /** Opens the host's own file manager on one of this plugin's filesystem providers. */
   openFilesystem?(providerId: string, childContext?: FilesystemChildContext): Promise<void>;
+  /** Capability broadcast from the init frame; a missing key means unsupported. */
+  capabilities?: { downloadFile: boolean; planApi: boolean; storage: boolean };
+  /** Plan API (Host API 1.2): read-only plan metadata for a stored connection. */
+  getPlanCapabilities?(connectionId: string): Promise<PlanCapabilities>;
+  /** Plan API (Host API 1.2): the host runs the estimated EXPLAIN itself. */
+  explainPlan?(request: PlanRequest): Promise<PlanResult>;
   /** Persist bytes through the host's native save dialog. */
   saveFile?(options: { fileName?: string; contentType?: string }, data: Uint8Array): Promise<{ path: string } | null>;
   copy?(text: string): Promise<void>;

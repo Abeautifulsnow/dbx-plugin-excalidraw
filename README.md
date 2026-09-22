@@ -16,6 +16,9 @@ leaving DBX — no cloud service involved.
   the query-result toolbar. It lays the result set out as an annotatable table
   on a fresh canvas instead of trying to replace the data grid; see
   [Result canvas](#result-canvas).
+- **Plan canvas** — the same result view can also lay the query's *estimated
+  execution plan* out as an annotatable operator tree, via the host's plan API
+  (`host.plans:read`); see [Plan canvas](#plan-canvas).
 - **Filesystem provider** — an `excalidraw:` scheme exposes the document store
   as browsable `.excalidraw` files, so DBX can open diagrams without going
   through the plugin UI; see [Filesystem provider](#filesystem-provider).
@@ -65,6 +68,34 @@ flattened so every table row keeps a fixed height.
 
 ![Sketch on canvas in the query-result toolbar](docs/images/result-canvas-toolbar.png)
 
+### Plan canvas
+
+When the tab was opened from a query result and the host exposes the plan API,
+the page offers a *Plan on canvas* action. It asks the host for the
+connection's plan capabilities first, then for the estimated plan of the
+result's SQL — the host composes and runs the EXPLAIN itself, so the plugin
+never sees credentials and cannot run arbitrary SQL. Only estimated plans are
+available through this surface; SQL is capped at 200,000 characters and the
+host clamps the timeout at 60 seconds.
+
+The returned plan is parsed for PostgreSQL JSON, MySQL JSON, and indented text
+plans; anything else refuses with a message instead of drawing a tree that
+would look plausible and be wrong. The layout is a tidy top-down tree — one
+box per operator carrying its cost and estimated rows, arrows for the
+parent-child flow, and a red outline on the highest-total-cost node. Plans
+beyond 150 nodes are truncated, and the scene caption says so.
+
+> **Host requirement.** The plan surface needs a host carrying the Host API
+> 1.2 plan methods (`getPlanCapabilities` / `explainPlan`). The manifest
+> declares `host.plans:read` but deliberately keeps `engines.host_api` at
+> `"1"`, and the button only renders when the init frame's
+> `capabilities.planApi` is true — an older host hides the entry entirely. One
+> caveat remains: a host old enough that its permission whitelist predates
+> `host.plans:read` reports the whole plugin incompatible at install time; the
+> same trade the `result-view` gate made, in rarer company. The dev host's
+> mock bridge has neither plan method, so this path can only be verified
+> against a real DBX build.
+
 ### Filesystem provider
 
 | URI | Contents |
@@ -100,6 +131,7 @@ time. Two worth knowing about:
 | Surface | Older hosts |
 | --- | --- |
 | Result canvas (`result-view`) | Needs a DBX build with `4f3be8ccf fix(plugin): resolve result-view by UI contribution` (2026-09-20) — see [Result canvas](#result-canvas) |
+| Plan canvas (plan API) | Needs the Host API 1.2 plan methods; the entry is gated on `capabilities.planApi` — see [Plan canvas](#plan-canvas) |
 | *Use the system save dialog* | Needs a build carrying `host.saveFile`; without it the export falls back to the plugin folder and the toast says so |
 
 There is no host-side version gate to read: the `init`, `context` and `env`

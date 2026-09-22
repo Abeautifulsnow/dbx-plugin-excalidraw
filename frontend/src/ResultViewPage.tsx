@@ -10,6 +10,7 @@ import {
   rowChoices,
   type GridSceneResult,
 } from "./resultScene";
+import { buildPlanScene, parsePlan } from "./plan";
 import { formatAll, type Strings } from "./i18n";
 import type { DocumentMeta, ResultSetContext } from "./types";
 
@@ -53,7 +54,23 @@ export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProp
     setPref("resultRows", rows);
   };
 
-  const actions = useResultViewActions({ sql: data.sql, scene: layout.scene, t, onOpen });
+  // The plan surface needs the plan API capability, a connection to ask, and
+  // SQL to explain; any of the three missing hides the button rather than
+  // disabling it, because on a host without the API the button could never
+  // succeed.
+  const planReady =
+    typeof window !== "undefined" &&
+    window.dbxPlugin?.capabilities?.planApi === true &&
+    data.connectionId !== "" &&
+    data.sql.trim() !== "";
+  const actions = useResultViewActions({
+    connectionId: data.connectionId,
+    database: data.database,
+    sql: data.sql,
+    scene: layout.scene,
+    t,
+    onOpen,
+  });
 
   return (
     <div className="result-view">
@@ -61,7 +78,9 @@ export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProp
         t={t}
         busy={actions.busy}
         canCreate={hasResult}
+        canPlan={planReady}
         onCreate={actions.create}
+        onPlan={actions.createPlan}
         onBrowse={onBrowse}
         onReveal={actions.reveal}
       />
@@ -102,6 +121,7 @@ interface ResultViewActions {
   /** Message for the most recently failed action; null when it succeeded. */
   failure: string | null;
   create: () => void;
+  createPlan: () => void;
   reveal: () => void;
 }
 
@@ -116,12 +136,14 @@ interface ResultViewActions {
  * manager" are different problems and are worded as such.
  */
 function useResultViewActions(params: {
+  connectionId: string;
+  database: string;
   sql: string;
   scene: GridSceneResult["scene"];
   t: Strings;
   onOpen: (meta: DocumentMeta) => void;
 }): ResultViewActions {
-  const { sql, scene, t, onOpen } = params;
+  const { connectionId, database, sql, scene, t, onOpen } = params;
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -140,6 +162,53 @@ function useResultViewActions(params: {
     }
   };
 
+  // The plan flow is sequential on purpose: capabilities first (a connection
+  // without estimated-plan support should say so instead of surfacing a
+  // host-side EXPLAIN error), then the explain, then parse, then draw.
+  const createPlan = async () => {
+    setBusy(true);
+    setFailure(null);
+    try {
+      const bridge = window.dbxPlugin;
+      if (!bridge?.getPlanCapabilities || !bridge.explainPlan) {
+        setFailure(t.planFailed);
+        return;
+      }
+      const caps = await bridge.getPlanCapabilities(connectionId);
+      if (!caps?.supports?.estimatedPlan) {
+        setFailure(t.planUnsupported);
+        return;
+      }
+      const result = await bridge.explainPlan({
+        connectionId,
+        database: database || undefined,
+        sql,
+        mode: "estimated",
+      });
+      const parsed = parsePlan(result.format, result.rawPlan);
+      if (!parsed) {
+        setFailure(t.planUnreadable);
+        return;
+      }
+      const base = deriveName(sql);
+      const name = base ? `${base} - plan` : t.planSceneTitle;
+      let caption = sql.replace(/\s+/g, " ").trim();
+      if (parsed.truncated) {
+        const suffix = formatAll(t.planTruncated, { n: parsed.includedNodes });
+        caption = caption ? `${caption} - ${suffix}` : suffix;
+      }
+      const planLayout = buildPlanScene(parsed, { title: name, caption: caption || undefined });
+      const meta = await api.createDocument(name);
+      await api.saveScene(meta.id, planLayout.scene);
+      onOpen(meta);
+    } catch (cause) {
+      console.error("[result-view] plan canvas failed", cause);
+      setFailure(t.planFailed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const reveal = async () => {
     setFailure(null);
     try {
@@ -150,19 +219,27 @@ function useResultViewActions(params: {
     }
   };
 
-  return { busy, failure, create: () => void create(), reveal: () => void reveal() };
+  return {
+    busy,
+    failure,
+    create: () => void create(),
+    createPlan: () => void createPlan(),
+    reveal: () => void reveal(),
+  };
 }
 
 interface ResultHeaderProps {
   t: Strings;
   busy: boolean;
   canCreate: boolean;
+  canPlan: boolean;
   onCreate: () => void;
+  onPlan: () => void;
   onBrowse: () => void;
   onReveal: () => void;
 }
 
-function ResultHeader({ t, busy, canCreate, onCreate, onBrowse, onReveal }: ResultHeaderProps) {
+function ResultHeader({ t, busy, canCreate, canPlan, onCreate, onPlan, onBrowse, onReveal }: ResultHeaderProps) {
   return (
     <header className="home-header">
       <div>
@@ -176,6 +253,11 @@ function ResultHeader({ t, busy, canCreate, onCreate, onBrowse, onReveal }: Resu
         <button type="button" className="btn" onClick={onBrowse} disabled={busy}>
           {t.resultViewOpenExisting}
         </button>
+        {canPlan && (
+          <button type="button" className="btn" onClick={onPlan} disabled={busy || !canCreate}>
+            {busy ? t.planCreating : t.planCreate}
+          </button>
+        )}
         <button type="button" className="btn btn--primary" onClick={onCreate} disabled={busy || !canCreate}>
           {busy ? t.resultViewCreating : t.resultViewCreate}
         </button>

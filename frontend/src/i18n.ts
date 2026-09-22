@@ -69,6 +69,13 @@ export interface Strings {
   resultViewOmittedColumns: string;
   resultViewSql: string;
   resultViewOpenExisting: string;
+  planCreate: string;
+  planCreating: string;
+  planSceneTitle: string;
+  planUnsupported: string;
+  planUnreadable: string;
+  planFailed: string;
+  planTruncated: string;
 }
 
 const en: Strings = {
@@ -140,6 +147,13 @@ const en: Strings = {
   resultViewOmittedColumns: "{n} columns left off",
   resultViewSql: "SQL",
   resultViewOpenExisting: "Open a diagram",
+  planCreate: "Plan on canvas",
+  planCreating: "Planning…",
+  planSceneTitle: "Execution plan",
+  planUnsupported: "This connection does not support estimated plans.",
+  planUnreadable: "The host returned a plan this canvas cannot lay out yet.",
+  planFailed: "Could not fetch or draw the execution plan.",
+  planTruncated: "plan truncated to {n} nodes",
 };
 
 const zh: Strings = {
@@ -211,6 +225,13 @@ const zh: Strings = {
   resultViewOmittedColumns: "省略了 {n} 列",
   resultViewSql: "SQL",
   resultViewOpenExisting: "打开已有图表",
+  planCreate: "计划上画布",
+  planCreating: "生成计划…",
+  planSceneTitle: "执行计划",
+  planUnsupported: "当前连接不支持预估执行计划。",
+  planUnreadable: "宿主返回的计划格式暂时无法铺到画布。",
+  planFailed: "获取或绘制执行计划失败。",
+  planTruncated: "计划已截断为 {n} 个节点",
 };
 
 export const strings: Record<Lang, Strings> = { en, zh };

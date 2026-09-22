@@ -40,7 +40,7 @@ export interface ExcalidrawScene {
   files: Record<string, never>;
 }
 
-type SceneElement = Record<string, unknown>;
+export type SceneElement = Record<string, unknown>;
 
 // Cell text is single-line and bounded: a runaway value would otherwise set the
 // column width and blow the scene past the save budget on its own.
@@ -148,7 +148,7 @@ export function deriveName(sql: string): string {
 }
 
 /** Deterministic seed/nonce source: the same result always yields the same scene. */
-function makeSequence(): () => number {
+export function makeSequence(): () => number {
   let state = 0x9e3779b9;
   return () => {
     state = (state * 1103515245 + 12345) & 0x7fffffff;
@@ -175,7 +175,7 @@ function isWideCodePoint(code: number): boolean {
   );
 }
 
-function estimateTextWidth(text: string, fontSize: number): number {
+export function estimateTextWidth(text: string, fontSize: number): number {
   let latin = 0;
   let wide = 0;
   for (const char of text) {
@@ -232,7 +232,7 @@ export function cellText(value: unknown): string {
   return fitCellText(text, WIDEST_CELL_WIDTH, FONT_SIZE);
 }
 
-function baseElement(id: string, seed: number, nonce: number): SceneElement {
+export function baseElement(id: string, seed: number, nonce: number): SceneElement {
   return {
     id,
     x: 0,
@@ -283,7 +283,7 @@ interface RectOptions extends Geometry {
   fillStyle?: string;
 }
 
-function textElement(id: string, text: string, options: TextOptions, sequence: () => number): SceneElement {
+export function textElement(id: string, text: string, options: TextOptions, sequence: () => number): SceneElement {
   const fontSize = options.fontSize ?? FONT_SIZE;
   return {
     ...baseElement(id, sequence(), sequence()),
@@ -305,7 +305,7 @@ function textElement(id: string, text: string, options: TextOptions, sequence: (
   };
 }
 
-function rectElement(id: string, options: RectOptions, sequence: () => number): SceneElement {
+export function rectElement(id: string, options: RectOptions, sequence: () => number): SceneElement {
   return {
     ...baseElement(id, sequence(), sequence()),
     type: "rectangle",

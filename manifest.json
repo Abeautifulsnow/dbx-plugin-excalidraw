@@ -13,7 +13,8 @@
   },
   "permissions": [
     "host.workbench",
-    "host.filesystem"
+    "host.filesystem",
+    "host.plans:read"
   ],
   "entrypoints": {
     "backend": {
