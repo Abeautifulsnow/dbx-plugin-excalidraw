@@ -374,10 +374,23 @@ const STROKE = "#1e1e1e";
 const MUTED = "#868e96";
 const HOT = "#e03131";
 const FILL = "#f1f3f5";
+const NOTE_FILL = "#ffec99";
+const NOTE_STROKE = "#f08c00";
+
+/** Heading + items for the plan-warnings sticky note; `moreTemplate` may
+ *  contain {n} and is filled with the count beyond the five shown lines. */
+export interface PlanWarningsNote {
+  heading: string;
+  items: string[];
+  moreTemplate?: string;
+}
 
 export interface PlanSceneOptions {
   title?: string;
   caption?: string;
+  /** Present and non-empty draws the warnings note; absent keeps the
+   *  scene byte-identical to a noteless run. */
+  warnings?: PlanWarningsNote;
 }
 
 export interface PlanSceneResult {
@@ -447,6 +460,113 @@ function place(node: PlanNode, left: number, top: number, hot: PlanNode | null, 
     const childWidth = subtreeWidth(child);
     place(child, cursor, childTop, hot, boxes);
     cursor += childWidth + GAP_X;
+  }
+}
+
+/**
+ * Draws one arrow per parent-child edge, after the boxes so nothing hides:
+ * Excalidraw renders in element order, and an arrow drawn first would sit
+ * under the row of boxes.
+ */
+function appendPlanArrows(elements: SceneElement[], boxes: Box[], sequence: () => number): void {
+  const byNode = new Map<PlanNode, Box>(boxes.map((box) => [box.node, box]));
+  for (const box of boxes) {
+    for (const child of box.node.children) {
+      const childBox = byNode.get(child);
+      if (!childBox) {
+        continue;
+      }
+      const startX = box.x + box.width / 2;
+      const startY = box.y + box.height;
+      const endX = childBox.x + childBox.width / 2;
+      const endY = childBox.y;
+      elements.push({
+        ...baseElement(`plan-arrow-${elements.length}`, sequence(), sequence()),
+        type: "arrow",
+        x: startX,
+        y: startY,
+        width: Math.abs(endX - startX),
+        height: Math.abs(endY - startY),
+        strokeColor: STROKE,
+        strokeWidth: 1,
+        points: [
+          [0, 0],
+          [endX - startX, endY - startY],
+        ],
+        startBinding: null,
+        endBinding: null,
+        lastCommittedPoint: null,
+        startArrowhead: null,
+        endArrowhead: "arrow",
+        elbowed: false,
+      });
+    }
+  }
+}
+
+/**
+ * Draws the plan-warnings sticky note to the right of everything drawn so
+ * far: a yellow rectangle carrying an orange heading line and up to five
+ * body lines, with any further items folded into a "+n more" line. Absent
+ * or empty warnings draw nothing, so a noteless run stays byte-identical
+ * to a scene built before this feature existed.
+ */
+function appendWarningsNote(elements: SceneElement[], warnings: PlanWarningsNote | undefined, sequence: () => number): void {
+  if (!warnings || warnings.items.length === 0) {
+    return;
+  }
+  const shown = warnings.items.slice(0, 5).map((line) => clip(line, 120));
+  if (warnings.items.length > 5 && warnings.moreTemplate) {
+    shown.push(warnings.moreTemplate.replace("{n}", String(warnings.items.length - 5)));
+  }
+  const noteFont = CAPTION_FONT_SIZE;
+  const headingWidth = estimateTextWidth(warnings.heading, noteFont);
+  const bodyWidth = shown.length ? Math.max(...shown.map((line) => estimateTextWidth(line, noteFont))) : 0;
+  const width = Math.ceil(Math.max(headingWidth, bodyWidth)) + NODE_PADDING_X * 2;
+  const height = Math.ceil((shown.length + 1) * noteFont * LINE_HEIGHT + NODE_PADDING_Y * 2);
+  const maxX = elements.reduce(
+    (edge, element) => Math.max(edge, (element.x as number) + (element.width as number)),
+    0,
+  );
+  const noteX = maxX + GAP_X;
+  elements.push(
+    rectElement(
+      `plan-note-${elements.length}`,
+      { x: noteX, y: SCENE_MARGIN, width, height, backgroundColor: NOTE_FILL, strokeColor: NOTE_STROKE },
+      sequence,
+    ),
+  );
+  elements.push(
+    textElement(
+      `plan-note-heading-${elements.length}`,
+      warnings.heading,
+      {
+        x: noteX + NODE_PADDING_X,
+        y: SCENE_MARGIN + NODE_PADDING_Y,
+        width: width - NODE_PADDING_X * 2,
+        height: noteFont * LINE_HEIGHT,
+        fontSize: noteFont,
+        strokeColor: NOTE_STROKE,
+      },
+      sequence,
+    ),
+  );
+  if (shown.length > 0) {
+    elements.push(
+      textElement(
+        `plan-note-body-${elements.length}`,
+        shown.join("\n"),
+        {
+          x: noteX + NODE_PADDING_X,
+          y: SCENE_MARGIN + NODE_PADDING_Y + noteFont * LINE_HEIGHT,
+          width: width - NODE_PADDING_X * 2,
+          height: shown.length * noteFont * LINE_HEIGHT,
+          fontSize: noteFont,
+          strokeColor: STROKE,
+        },
+        sequence,
+      ),
+    );
   }
 }
 
@@ -553,41 +673,11 @@ export function buildPlanScene(plan: ParsedPlan, options: PlanSceneOptions = {})
     }
   }
 
-  // Arrows after the boxes so nothing hides: Excalidraw renders in element
-  // order, and an arrow drawn first would sit under the row of boxes.
-  const byNode = new Map<PlanNode, Box>(boxes.map((box) => [box.node, box]));
-  for (const box of boxes) {
-    for (const child of box.node.children) {
-      const childBox = byNode.get(child);
-      if (!childBox) {
-        continue;
-      }
-      const startX = box.x + box.width / 2;
-      const startY = box.y + box.height;
-      const endX = childBox.x + childBox.width / 2;
-      const endY = childBox.y;
-      elements.push({
-        ...baseElement(`plan-arrow-${elements.length}`, sequence(), sequence()),
-        type: "arrow",
-        x: startX,
-        y: startY,
-        width: Math.abs(endX - startX),
-        height: Math.abs(endY - startY),
-        strokeColor: STROKE,
-        strokeWidth: 1,
-        points: [
-          [0, 0],
-          [endX - startX, endY - startY],
-        ],
-        startBinding: null,
-        endBinding: null,
-        lastCommittedPoint: null,
-        startArrowhead: null,
-        endArrowhead: "arrow",
-        elbowed: false,
-      });
-    }
-  }
+  appendPlanArrows(elements, boxes, sequence);
+
+  // The note is an annotation, not part of the tree; appending it last
+  // keeps it above the plan boxes in Excalidraw's element-order rendering.
+  appendWarningsNote(elements, options.warnings, sequence);
 
   const scene: ExcalidrawScene = {
     type: "excalidraw",
@@ -603,5 +693,46 @@ export function buildPlanScene(plan: ParsedPlan, options: PlanSceneOptions = {})
     includedNodes: plan.includedNodes,
     bytes: JSON.stringify(scene).length,
     highlighted: hot !== null,
+  };
+}
+
+export interface PlanAiContextInput {
+  dbType: string;
+  sql: string;
+  warnings: string[];
+}
+
+/**
+ * Builds the one-way snapshot handed to `ai.openConversation`: the plan as an
+ * indented text tree with the highest-cost node marked inline, plus the raw
+ * inputs the AI panel cannot see otherwise. Keys stay English so the snapshot
+ * is locale-independent; the prompt the caller sends carries the locale. A
+ * capped plan is ~150 short lines, so the object stays far below the 2 MiB
+ * bridge budget — the caller still measures before sending.
+ */
+export function buildPlanAiContext(plan: ParsedPlan, input: PlanAiContextInput): Record<string, unknown> {
+  const hot = hottest(plan.root);
+  const lines: string[] = [];
+  const walk = (node: PlanNode, depth: number): void => {
+    let line = `${"  ".repeat(depth)}- ${node.title}`;
+    if (node.metrics) {
+      line += ` | ${node.metrics}`;
+    }
+    if (node === hot) {
+      line += "  <-- highest cost";
+    }
+    lines.push(line);
+    for (const child of node.children) {
+      walk(child, depth + 1);
+    }
+  };
+  walk(plan.root, 0);
+  return {
+    dbType: input.dbType,
+    sql: input.sql,
+    planTree: lines.join("\n"),
+    nodeCount: { reported: plan.totalNodes, drawn: plan.includedNodes },
+    truncated: plan.truncated,
+    warnings: input.warnings,
   };
 }

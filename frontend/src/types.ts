@@ -71,6 +71,18 @@ export interface PlanResult {
   warnings: string[];
 }
 
+/** One-way payload for `ai.openConversation` — validated by the host. */
+export interface AiConversationOptions {
+  /** Conversation heading, 1-200 characters after trimming. */
+  title: string;
+  /** First prompt, 1-32000 characters after trimming. */
+  prompt: string;
+  /** Snapshot object; the host deep-copies it and stamps plugin identity. */
+  context: Record<string, unknown>;
+  /** True starts the analysis immediately instead of waiting for the user. */
+  send?: boolean;
+}
+
 /**
  * Child context the host reads back when opening a plugin filesystem. Only
  * `uri` is used for navigation; the host type-checks it and passes it through
@@ -94,11 +106,15 @@ export interface DbxPluginBridge {
   /** Opens the host's own file manager on one of this plugin's filesystem providers. */
   openFilesystem?(providerId: string, childContext?: FilesystemChildContext): Promise<void>;
   /** Capability broadcast from the init frame; a missing key means unsupported. */
-  capabilities?: { downloadFile: boolean; planApi: boolean; storage: boolean };
+  capabilities?: { downloadFile: boolean; planApi: boolean; storage: boolean; ai: boolean };
   /** Plan API (Host API 1.2): read-only plan metadata for a stored connection. */
   getPlanCapabilities?(connectionId: string): Promise<PlanCapabilities>;
   /** Plan API (Host API 1.2): the host runs the estimated EXPLAIN itself. */
   explainPlan?(request: PlanRequest): Promise<PlanResult>;
+  /** Built-in AI panel conversation seeded with a one-way plugin snapshot
+   *  (title <=200 chars, prompt <=32000, context plain object <=2 MiB); the
+   *  plugin never sees model output back. Available when capabilities.ai. */
+  ai?: { openConversation(options: AiConversationOptions): Promise<void> };
   /** Persist bytes through the host's native save dialog. */
   saveFile?(options: { fileName?: string; contentType?: string }, data: Uint8Array): Promise<{ path: string } | null>;
   copy?(text: string): Promise<void>;

@@ -31,7 +31,7 @@ const CONTRIBUTIONS = {
 };
 
 const FILESYSTEM_CAPABILITIES = ["read", "write", "delete", "rename", "mkdir"];
-const PERMISSIONS = ["host.events", "host.binary", "host.workbench", "host.filesystem", "host.plans:read"];
+const PERMISSIONS = ["host.events", "host.binary", "host.workbench", "host.filesystem", "host.plans:read", "host.ai"];
 
 const problems = [];
 

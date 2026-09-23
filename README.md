@@ -19,6 +19,9 @@ leaving DBX — no cloud service involved.
 - **Plan canvas** — the same result view can also lay the query's *estimated
   execution plan* out as an annotatable operator tree, via the host's plan API
   (`host.plans:read`); see [Plan canvas](#plan-canvas).
+- **AI plan review** — an *Ask AI* action hands the parsed plan to DBX's
+  built-in AI panel as a one-way snapshot (`host.ai`); plan warnings arrive on
+  the canvas as a sticky note.
 - **Filesystem provider** — an `excalidraw:` scheme exposes the document store
   as browsable `.excalidraw` files, so DBX can open diagrams without going
   through the plugin UI; see [Filesystem provider](#filesystem-provider).
@@ -83,7 +86,17 @@ plans; anything else refuses with a message instead of drawing a tree that
 would look plausible and be wrong. The layout is a tidy top-down tree — one
 box per operator carrying its cost and estimated rows, arrows for the
 parent-child flow, and a red outline on the highest-total-cost node. Plans
-beyond 150 nodes are truncated, and the scene caption says so.
+beyond 150 nodes are truncated, and the scene caption says so. Warnings the
+host attaches to the plan land on the canvas as a yellow sticky note — the
+first five lines, then a fold counting the rest.
+
+Next to *Plan on canvas* sits *Ask AI*: it runs the same pipeline but, instead
+of drawing, hands the parsed plan (tree text with the highest-cost node marked,
+costs, warnings, and the SQL) to DBX's built-in AI panel as a one-way snapshot
+and starts the analysis immediately. The plugin never receives model output
+back; the button only renders on hosts advertising the `ai` capability. The
+manifest declares `host.ai` while `engines.host_api` stays at `"1"` — the same
+probe-and-degrade trade as the plan surface itself.
 
 > **Host requirement.** The plan surface needs a host carrying the Host API
 > 1.2 plan methods (`getPlanCapabilities` / `explainPlan`). The manifest
@@ -132,6 +145,7 @@ time. Two worth knowing about:
 | --- | --- |
 | Result canvas (`result-view`) | Needs a DBX build with `4f3be8ccf fix(plugin): resolve result-view by UI contribution` (2026-09-20) — see [Result canvas](#result-canvas) |
 | Plan canvas (plan API) | Needs the Host API 1.2 plan methods; the entry is gated on `capabilities.planApi` — see [Plan canvas](#plan-canvas) |
+| Ask AI (plan review) | Additionally needs a host with the built-in AI panel; gated on `capabilities.ai` and declared as `host.ai` |
 | *Use the system save dialog* | Needs a build carrying `host.saveFile`; without it the export falls back to the plugin folder and the toast says so |
 
 There is no host-side version gate to read: the `init`, `context` and `env`

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildPlanScene, MAX_PLAN_NODES, parsePlan, type PlanNode } from "../plan";
+import {
+  buildPlanAiContext,
+  buildPlanScene,
+  MAX_PLAN_NODES,
+  parsePlan,
+  type PlanNode,
+} from "../plan";
 
 function nodes(node: PlanNode): number {
   return 1 + node.children.reduce((sum, child) => sum + nodes(child), 0);
@@ -220,5 +226,92 @@ describe("buildPlanScene", () => {
     const root = byText("Sort");
     const child = byText("Seq Scan on small");
     expect((child.y as number)).toBeGreaterThan((root.y as number) + (root.height as number));
+  });
+});
+
+describe("buildPlanScene — warnings sticky note", () => {
+  const pg = {
+    Plan: {
+      "Node Type": "Sort",
+      "Total Cost": 99,
+      "Plan Rows": 10,
+      Plans: [{ "Node Type": "Seq Scan", "Relation Name": "small", "Total Cost": 10, "Plan Rows": 1 }],
+    },
+  };
+  const parsed = parsePlan("json", pg)!;
+
+  it("keeps the scene byte-identical when there is nothing to warn about", () => {
+    const base = buildPlanScene(parsed, { title: "x" });
+    const empty = buildPlanScene(parsed, { title: "x", warnings: { heading: "Plan warnings", items: [] } });
+    expect(JSON.stringify(empty.scene)).toBe(JSON.stringify(base.scene));
+  });
+
+  it("draws a yellow note to the right of everything else", () => {
+    const result = buildPlanScene(parsed, {
+      title: "x",
+      warnings: { heading: "Plan warnings", items: ["w1", "w2"], moreTemplate: "+{n} more" },
+    });
+    const elements = elementList(result.scene);
+    const noteRect = elements.find(
+      (element) => element.type === "rectangle" && element.backgroundColor === "#ffec99",
+    );
+    expect(noteRect).toBeDefined();
+    expect(noteRect!.strokeColor).toBe("#f08c00");
+    const otherMaxX = Math.max(
+      ...elements
+        .filter((element) => element !== noteRect && (element.x as number) < (noteRect!.x as number))
+        .map((element) => (element.x as number) + (element.width as number)),
+    );
+    expect(noteRect!.x).toBeGreaterThan(otherMaxX);
+    const heading = elements.find((element) => element.type === "text" && element.text === "Plan warnings");
+    expect(heading!.strokeColor).toBe("#f08c00");
+    const body = elements.find((element) => element.type === "text" && element.text === "w1\nw2");
+    expect(body).toBeDefined();
+  });
+
+  it("folds the sixth and later warnings into a +n more line", () => {
+    const result = buildPlanScene(parsed, {
+      title: "x",
+      warnings: { heading: "W", items: ["a", "b", "c", "d", "e", "f", "g"], moreTemplate: "+{n} more" },
+    });
+    const body = elementList(result.scene).find(
+      (element) => element.type === "text" && String(element.text).startsWith("a\n"),
+    )!;
+    const text = String(body.text);
+    expect(text.split("\n")).toHaveLength(6);
+    expect(text).toContain("+2 more");
+    expect(text).not.toContain("f\n");
+  });
+});
+
+describe("buildPlanAiContext", () => {
+  const pg = {
+    Plan: {
+      "Node Type": "Sort",
+      "Total Cost": 99,
+      "Plan Rows": 10,
+      Plans: [
+        { "Node Type": "Seq Scan", "Relation Name": "small", Filter: "(id > 10)", "Total Cost": 10, "Plan Rows": 1 },
+      ],
+    },
+  };
+
+  it("renders the tree and marks the hottest node", () => {
+    const context = buildPlanAiContext(parsePlan("json", pg)!, { dbType: "postgresql", sql: "SELECT 1", warnings: [] });
+    const tree = String(context.planTree).split("\n");
+    expect(tree[0]).toContain("- Sort");
+    expect(tree[0]).toContain("cost=99");
+    expect(tree[0]).toContain("<-- highest cost");
+    expect(tree[1]).toContain("Seq Scan on small");
+    expect(context.dbType).toBe("postgresql");
+    expect(context.truncated).toBe(false);
+    expect(context.warnings).toEqual([]);
+  });
+
+  it("carries the inputs through and stays far below the bridge budget", () => {
+    const plan = parsePlan("json", pg)!;
+    const context = buildPlanAiContext(plan, { dbType: "postgresql", sql: "x".repeat(5000), warnings: ["w"] });
+    expect(context.warnings).toEqual(["w"]);
+    expect(JSON.stringify(context).length).toBeLessThan(64 * 1024);
   });
 });

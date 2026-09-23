@@ -10,7 +10,7 @@ import {
   rowChoices,
   type GridSceneResult,
 } from "./resultScene";
-import { buildPlanScene, parsePlan } from "./plan";
+import { buildPlanAiContext, buildPlanScene, parsePlan, type ParsedPlan } from "./plan";
 import { formatAll, type Strings } from "./i18n";
 import type { DocumentMeta, ResultSetContext } from "./types";
 
@@ -63,6 +63,11 @@ export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProp
     window.dbxPlugin?.capabilities?.planApi === true &&
     data.connectionId !== "" &&
     data.sql.trim() !== "";
+  // The AI explain rides on the same plan pipeline but opens the host's
+  // built-in AI panel instead of drawing; it only exists where the host
+  // advertises the ai capability, otherwise the button could never succeed.
+  const aiExplainReady =
+    planReady && typeof window !== "undefined" && window.dbxPlugin?.capabilities?.ai === true;
   const actions = useResultViewActions({
     connectionId: data.connectionId,
     database: data.database,
@@ -79,8 +84,10 @@ export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProp
         busy={actions.busy}
         canCreate={hasResult}
         canPlan={planReady}
+        canAi={aiExplainReady}
         onCreate={actions.create}
         onPlan={actions.createPlan}
+        onExplainAi={actions.explainPlanAi}
         onBrowse={onBrowse}
         onReveal={actions.reveal}
       />
@@ -122,6 +129,7 @@ interface ResultViewActions {
   failure: string | null;
   create: () => void;
   createPlan: () => void;
+  explainPlanAi: () => void;
   reveal: () => void;
 }
 
@@ -162,48 +170,95 @@ function useResultViewActions(params: {
     }
   };
 
-  // The plan flow is sequential on purpose: capabilities first (a connection
-  // without estimated-plan support should say so instead of surfacing a
-  // host-side EXPLAIN error), then the explain, then parse, then draw.
+  // One plan fetch shared by both consumers, sequential on purpose:
+  // capabilities first (a connection without estimated-plan support should say
+  // so instead of surfacing a host-side EXPLAIN error), then explain, then
+  // parse. A null return means the failure slot already carries the reason.
+  const fetchPlan = async (): Promise<{ parsed: ParsedPlan; dbType: string; warnings: string[] } | null> => {
+    const bridge = window.dbxPlugin;
+    if (!bridge?.getPlanCapabilities || !bridge.explainPlan) {
+      setFailure(t.planFailed);
+      return null;
+    }
+    const caps = await bridge.getPlanCapabilities(connectionId);
+    if (!caps?.supports?.estimatedPlan) {
+      setFailure(t.planUnsupported);
+      return null;
+    }
+    const result = await bridge.explainPlan({
+      connectionId,
+      database: database || undefined,
+      sql,
+      mode: "estimated",
+    });
+    const parsed = parsePlan(result.format, result.rawPlan);
+    if (!parsed) {
+      setFailure(t.planUnreadable);
+      return null;
+    }
+    return { parsed, dbType: result.dbType || caps.dbType || "", warnings: result.warnings ?? [] };
+  };
+
   const createPlan = async () => {
     setBusy(true);
     setFailure(null);
     try {
-      const bridge = window.dbxPlugin;
-      if (!bridge?.getPlanCapabilities || !bridge.explainPlan) {
-        setFailure(t.planFailed);
-        return;
-      }
-      const caps = await bridge.getPlanCapabilities(connectionId);
-      if (!caps?.supports?.estimatedPlan) {
-        setFailure(t.planUnsupported);
-        return;
-      }
-      const result = await bridge.explainPlan({
-        connectionId,
-        database: database || undefined,
-        sql,
-        mode: "estimated",
-      });
-      const parsed = parsePlan(result.format, result.rawPlan);
-      if (!parsed) {
-        setFailure(t.planUnreadable);
+      const fetched = await fetchPlan();
+      if (!fetched) {
         return;
       }
       const base = deriveName(sql);
       const name = base ? `${base} - plan` : t.planSceneTitle;
       let caption = sql.replace(/\s+/g, " ").trim();
-      if (parsed.truncated) {
-        const suffix = formatAll(t.planTruncated, { n: parsed.includedNodes });
+      if (fetched.parsed.truncated) {
+        const suffix = formatAll(t.planTruncated, { n: fetched.parsed.includedNodes });
         caption = caption ? `${caption} - ${suffix}` : suffix;
       }
-      const planLayout = buildPlanScene(parsed, { title: name, caption: caption || undefined });
+      const planLayout = buildPlanScene(fetched.parsed, {
+        title: name,
+        caption: caption || undefined,
+        warnings:
+          fetched.warnings.length > 0
+            ? { heading: t.planWarningsHeading, items: fetched.warnings, moreTemplate: t.planWarningsMore }
+            : undefined,
+      });
       const meta = await api.createDocument(name);
       await api.saveScene(meta.id, planLayout.scene);
       onOpen(meta);
     } catch (cause) {
       console.error("[result-view] plan canvas failed", cause);
       setFailure(t.planFailed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // F-01: same pipeline, but the parsed plan goes to the host's built-in AI
+  // panel as a one-way snapshot instead of onto a canvas. The size is measured
+  // because the host rejects oversized contexts before anything opens.
+  const explainPlanAi = async () => {
+    setBusy(true);
+    setFailure(null);
+    try {
+      const bridge = window.dbxPlugin;
+      if (!bridge?.ai?.openConversation) {
+        setFailure(t.planAiFailed);
+        return;
+      }
+      const fetched = await fetchPlan();
+      if (!fetched) {
+        return;
+      }
+      const context = buildPlanAiContext(fetched.parsed, { dbType: fetched.dbType, sql, warnings: fetched.warnings });
+      if (JSON.stringify(context).length > 2 * 1024 * 1024) {
+        setFailure(t.planAiTooLarge);
+        return;
+      }
+      const title = (deriveName(sql) || t.planSceneTitle).slice(0, 200);
+      await bridge.ai.openConversation({ title, prompt: t.planAiPrompt, context, send: true });
+    } catch (cause) {
+      console.error("[result-view] ai explain failed", cause);
+      setFailure(t.planAiFailed);
     } finally {
       setBusy(false);
     }
@@ -224,6 +279,7 @@ function useResultViewActions(params: {
     failure,
     create: () => void create(),
     createPlan: () => void createPlan(),
+    explainPlanAi: () => void explainPlanAi(),
     reveal: () => void reveal(),
   };
 }
@@ -233,13 +289,15 @@ interface ResultHeaderProps {
   busy: boolean;
   canCreate: boolean;
   canPlan: boolean;
+  canAi: boolean;
   onCreate: () => void;
   onPlan: () => void;
+  onExplainAi: () => void;
   onBrowse: () => void;
   onReveal: () => void;
 }
 
-function ResultHeader({ t, busy, canCreate, canPlan, onCreate, onPlan, onBrowse, onReveal }: ResultHeaderProps) {
+function ResultHeader({ t, busy, canCreate, canPlan, canAi, onCreate, onPlan, onExplainAi, onBrowse, onReveal }: ResultHeaderProps) {
   return (
     <header className="home-header">
       <div>
@@ -256,6 +314,11 @@ function ResultHeader({ t, busy, canCreate, canPlan, onCreate, onPlan, onBrowse,
         {canPlan && (
           <button type="button" className="btn" onClick={onPlan} disabled={busy || !canCreate}>
             {busy ? t.planCreating : t.planCreate}
+          </button>
+        )}
+        {canAi && (
+          <button type="button" className="btn" onClick={onExplainAi} disabled={busy || !canCreate}>
+            {t.planAi}
           </button>
         )}
         <button type="button" className="btn btn--primary" onClick={onCreate} disabled={busy || !canCreate}>

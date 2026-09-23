@@ -76,6 +76,12 @@ export interface Strings {
   planUnreadable: string;
   planFailed: string;
   planTruncated: string;
+  planAi: string;
+  planAiFailed: string;
+  planAiTooLarge: string;
+  planAiPrompt: string;
+  planWarningsHeading: string;
+  planWarningsMore: string;
 }
 
 const en: Strings = {
@@ -154,6 +160,12 @@ const en: Strings = {
   planUnreadable: "The host returned a plan this canvas cannot lay out yet.",
   planFailed: "Could not fetch or draw the execution plan.",
   planTruncated: "plan truncated to {n} nodes",
+  planAi: "Ask AI",
+  planAiFailed: "Could not open the DBX AI panel.",
+  planAiTooLarge: "The plan snapshot exceeds the AI panel's size limit.",
+  planAiPrompt: "Here is a query's estimated execution plan captured by DBX (EXPLAIN only, never executed). Explain the plan: what the query does step by step, where the cost concentrates (the highest-cost node is marked '<-- highest cost'), whether row estimates look suspicious, and which concrete changes (indexes, query rewrites, settings) would help. Reference node names. Answer in the user's language.",
+  planWarningsHeading: "Plan warnings",
+  planWarningsMore: "+{n} more",
 };
 
 const zh: Strings = {
@@ -232,6 +244,12 @@ const zh: Strings = {
   planUnreadable: "宿主返回的计划格式暂时无法铺到画布。",
   planFailed: "获取或绘制执行计划失败。",
   planTruncated: "计划已截断为 {n} 个节点",
+  planAi: "让 AI 解读",
+  planAiFailed: "未能打开 DBX AI 面板。",
+  planAiTooLarge: "计划快照超出 AI 面板的大小限制。",
+  planAiPrompt: "以下是 DBX 取到的查询预估执行计划（仅 EXPLAIN，未真正执行）。请解读该计划：逐步说明查询实际在做什么、成本集中在哪里（最高成本节点已标注 '<-- highest cost'）、行数估算是否可疑，并给出具体可落地的优化建议（索引、改写、参数）。请引用节点名，并用用户的语言回答。",
+  planWarningsHeading: "计划警告",
+  planWarningsMore: "另有 {n} 条",
 };
 
 export const strings: Record<Lang, Strings> = { en, zh };
