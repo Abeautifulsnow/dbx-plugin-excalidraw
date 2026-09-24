@@ -38,7 +38,8 @@
 
 | 目标版本 | manifest 变更 | 运行时门禁 | 本地守卫同步 |
 | --- | --- | --- | --- |
-| 0.3.0 | `permissions` += `host.ai`；`contributions` += context-menu（`menu: "table"`，需 backend 入口） | `capabilities.ai` 探测降级；菜单由宿主按声明渲染 | `check-manifest.mjs` PERMISSIONS 白名单 += `host.ai`（现仍缺 `host.storage`/`host.ai`） |
+| 0.3.0 ✅ 已发布 | `permissions` += `host.ai`；`contributions` += context-menu（`menu: "table"`，需 backend 入口） | `capabilities.ai` 探测降级；菜单由宿主按声明渲染 | `check-manifest.mjs` PERMISSIONS 白名单 += `host.ai`（现仍缺 `host.storage`/`host.schema:read`） |
+| 0.3.x+（可选增强） | `permissions` += `host.schema:read`（宿主 2026-09-23 新增，Host API 1.3，#9917） | `capabilities.schemaMetadataApi` 探测降级；`host.getTableMetadata` 取真实列元数据（F-03 骨架带真实列、F-05 签名二次校验） | `check-manifest.mjs` PERMISSIONS += `host.schema:read` |
 | 0.4.0 | 无新权限 | 结果集列签名检测 + 拖放均离线 | — |
 | backlog | `permissions` += `host.network:https://<origin>`（≤2 个固定源） | 设置开关默认关（opt-in） | 网络权限正则已支持 |
 
@@ -97,6 +98,9 @@
 3. `database`/`schema` 缺省时便签省略对应行，不出现 "undefined"。
 4. 连续右键多张表生成多份独立文档；sidecar 单例（多标签共享）下无状态竞争。
 5. 后端测试覆盖 params 解析与文档生成。
+6. 宿主支持 schema 元数据 API 时骨架含真实列清单（列名+类型）；不支持或无 `host.schema:read` 时退化为骨架框并在便签注明。
+
+**增强（2026-09-24，依赖宿主新能力）**：宿主新增只读 `host.getTableMetadata`（权限 `host.schema:read`，gate `capabilities.schemaMetadataApi`，连接级身份沿用 `params.table`）——骨架便签可直接携带真实列名/类型清单，无权限或宿主不支持时退化为纯骨架。
 
 **边界**：本功能不负责「跳转到该文档」（宿主没有插件触发的 workbench 打开通道），用户经 `excalidraw:` 文件列表进入；引导方式见开放问题 Q1，导航增强拆到 F-04。
 
@@ -126,6 +130,8 @@
 1. `information_schema.key_column_usage` 形（`TABLE_NAME/COLUMN_NAME/REFERENCED_TABLE_NAME/REFERENCED_COLUMN_NAME/CONSTRAINT_NAME`）。
 2. `SHOW CREATE TABLE` 单列文本形（正则解析 `CONSTRAINT ... FOREIGN KEY`）。
 3. 简列清单形（`TABLE_NAME/COLUMN_NAME/DATA_TYPE`）→ 只画表卡片不画线。
+
+**元数据兜底（2026-09-24 新增能力）**：确认弹层阶段用 `host.getTableMetadata` 对候选表做列名集合二次校验（重合度阈值），把误判拦截在确认前（缓解 R2）；无权限时跳过兜底、仅靠签名+人工确认。
 
 **验收标准**
 
@@ -217,7 +223,7 @@
 
 1. **单测**（vitest）：所有解析器/布局器/签名检测走表驱动用例；场景 determinism 不变量（同输入逐字节一致、热点唯一、箭头端点合法）沿用 0.2.3 的测试模式。
 2. **上限边界单测**：200/32000/2 MiB（F-01）、8 MiB（F-06）、500 行/40 表（F-05）、150 节点（F-07 继承）。
-3. **真机验证清单**（dev host 做不了的事）：`dbx-plugin dev` 注入的 mock bridge **缺** `getPlanCapabilities`/`explainPlan`/`ai.openConversation`/`downloadFile`/`fileTransfer`，因此 F-01/04/05/06/10 的端到端必须在真实 DBX（≥ 含 table 右键与 host.ai 的构建）里验证；`context-menu` 与 `host.ai` 目前都没有已发布先例（审计结论「已实现但未经现场验证」），v0.3.0 发布前必须完成实机走查并截图留档。
+3. **真机验证清单**（dev host 做不了的事）：`dbx-plugin dev` 注入的 mock bridge **缺** `getPlanCapabilities`/`explainPlan`/`ai.openConversation`/`getTableMetadata`/`listConnections`/`downloadFile`/`fileTransfer`，因此 F-01/03/04/05/06/10 的端到端必须在真实 DBX（≥ 含 table 右键、host.ai 与 host.schema:read 的构建）里验证；`context-menu`、`host.ai`、`host.schema:read` 与 2026-09-24 的 `command`/`menus` 贡献点目前都没有已发布先例（审计结论「已实现但未经现场验证」），发布前必须完成实机走查并截图留档。
 4. **i18n**：每个功能 zh/en 双语条目齐全，`check-manifest.mjs` 的本地化 key 校验通过。
 
 ## 7. 风险与开放问题
@@ -225,7 +231,7 @@
 **风险**
 
 - R1 `host.ai` / table 右键均为宿主新能力，行为细节（如 AI 会话 UI、菜单渲染时机）以实机为准 → P0 不抢发，实机走查前置。
-- R2 F-05 列签名启发式误判（普通结果撞签名）→ 强制确认弹层，永不静默转换。
+- R2 F-05 列签名启发式误判（普通结果撞签名）→ 强制确认弹层，永不静默转换；宿主 schema 元数据 API（`host.getTableMetadata`）可用时对候选表做列名集合二次校验。
 - R3 权限镜像不一致会导致已发布包安装失败（installer.rs:839）→ 三处同步进发版固定动作。
 - R4 快照上限（500 行/2 MiB）限制 ER 规模 → 超限引导用户缩小范围，不做静默截断图。
 
@@ -234,15 +240,17 @@
 - Q1（F-03）：创建骨架文档后如何引导用户到达？候选：toast 文案指路文件列表 + 新文档置顶；或探索 `dbx-open-plugin-install-links` 类宿主事件是否有可复用通道（低概率）。
 - Q2（F-05）：首发列签名清单是否收敛为 key_column_usage + SHOW CREATE TABLE 两种？建议是，简列清单形放第二批。
 - Q3（F-08）：约定文本格式细节（首行表名的解析规则、列类型词表、复合 FK 的箭头表达）需要一份独立 mini-spec 再动工。
+- Q4（新增，2026-09-24）：宿主 PR-A4 落地的 `command`/`menus` 贡献点与底部 dock（appToolbar/appSidebar/commandPalette/statusBar 四位置）是否值得用于「选区发送 AI」入口与文档快捷动作？等宿主发布 manifest.schema.json 同步这两个变体后再评估。
 
 ## 附：关键能力锚点
 
 | 能力 | 锚点 |
 | --- | --- |
-| table 右键载荷 | `dbx/apps/desktop/src/lib/plugins/pluginContext.ts:14-38`；manifest 校验 `dbx/crates/dbx-plugin-runtime/src/plugins/manifest.rs:1133-1138` |
-| ai.openConversation | 分派与门禁 `dbx/apps/desktop/src/lib/plugins/pluginHostBridge.ts:337-343`；校验 `dbx/apps/desktop/src/lib/ai/aiPluginConversation.ts:19-31` |
-| 权限枚举（含 host.ai） | `dbx/crates/dbx-plugin-runtime/src/plugins/manifest.rs:24-25`；schema `dbx/plugins/manifest.schema.json:33` |
-| fileTransfer 拖放/句柄 | `dbx/apps/desktop/src/components/plugins/PluginWorkbenchHost.vue:88-95`；句柄 UUID 化 `dbx/src-tauri/src/commands/plugin_file.rs:55-61` |
-| 计划上限 | `dbx/apps/desktop/src/lib/plugins/pluginHostBridge.ts:946` 起（estimated 唯一 mode、200k/4 MiB/60s） |
+| table 右键载荷 | `dbx/apps/desktop/src/lib/plugins/pluginContext.ts:14-38`；manifest 校验 `dbx/crates/dbx-plugin-runtime/src/plugins/manifest.rs:1314-1319` |
+| ai.openConversation | 分派与门禁 `dbx/apps/desktop/src/lib/plugins/pluginHostBridge.ts:389-395`；校验 `dbx/apps/desktop/src/lib/ai/aiPluginConversation.ts:19-31` |
+| getTableMetadata / host.schema:read | 分派与门禁 `dbx/apps/desktop/src/lib/plugins/pluginHostBridge.ts:459-462`；契约 `dbx/apps/desktop/src/types/pluginSchemaMetadata.ts`；Rust 实现 `dbx/crates/dbx-core/src/schema/plugin_metadata.rs` |
+| 权限枚举（8 项，含 host.ai/host.schema:read） | `dbx/crates/dbx-plugin-runtime/src/plugins/manifest.rs:25-34`；schema `dbx/plugins/manifest.schema.json:33` |
+| fileTransfer 拖放/句柄 | `dbx/apps/desktop/src/components/plugins/PluginWorkbenchHost.vue:89-96`；句柄 UUID 化 `dbx/src-tauri/src/commands/plugin_file.rs:55-61` |
+| 计划上限 | `dbx/apps/desktop/src/lib/plugins/pluginHostBridge.ts:1023` 起（estimated 唯一 mode、200k/4 MiB/60s） |
 | requestUserInput | `dbx/crates/dbx-plugin-runtime/src/plugins/runtime.rs:701`；README「Estimated execution plans / Host API 1.1」节 |
 | 权限镜像校验 | `dbx/crates/dbx-plugin-runtime/src/plugins/installer.rs:839` |

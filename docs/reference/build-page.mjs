@@ -301,7 +301,7 @@ mark.hitmark-off{background:none}
   <aside class="side" id="side">
     <div class="brand">
       <b>DBX 插件能力与事件全谱</b>
-      <span>audit · host api 1.2.0</span>
+      <span>audit · host api 1.3.0</span>
     </div>
     <button class="mobtoggle" id="mobtoggle" type="button" aria-expanded="true">目录</button>
     <nav aria-label="目录">
@@ -315,7 +315,7 @@ ${tocHtml}
       <h1>DBX 插件能力与事件全谱</h1>
       <p class="lede">DBX 宿主向插件露出的全部面：清单贡献点、<code>window.dbxPlugin</code> 前端 API、宿主↔sidecar 的 JSON-RPC 协议、事件通道、权限闸门、SDK 工具链，以及各处尺寸与版本门槛。每一条都带 <code>file:line</code> 锚点。</p>
       <div class="metaline">
-        <span><b>host_api</b> 1.2.0</span>
+        <span><b>host_api</b> 1.3.0</span>
         <span><b>protocol_version</b> 1</span>
         <span><b>manifest_version</b> 1</span>
         <span><b>方法</b> 8 维并行勘察 + 对抗式校验</span>
