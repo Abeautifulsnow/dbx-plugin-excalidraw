@@ -6,7 +6,7 @@
   "version": "0.3.0",
   "publisher": "runstone",
   "description": "A lightweight, local-first diagramming workspace powered by Excalidraw, embedded directly in DBX.",
-  "icon": "assets/plugin.svg",
+  "icon": "assets/plugin.png",
   "engines": {
     "dbx": ">=0.5.68",
     "host_api": "1"
@@ -32,21 +32,21 @@
       "id": "io.dbx.excalidraw.workbench",
       "label": "Excalidraw Studio",
       "description": "A local-first Excalidraw workspace for diagrams and sketches.",
-      "icon": "assets/plugin.svg"
+      "icon": "assets/plugin.png"
     },
     {
       "type": "result-view",
       "id": "io.dbx.excalidraw.result-view",
       "label": "Sketch on canvas",
       "description": "Drop this result set onto an Excalidraw canvas and annotate it.",
-      "icon": "assets/plugin.svg"
+      "icon": "assets/plugin.png"
     },
     {
       "type": "filesystem-provider",
       "id": "io.dbx.excalidraw.documents",
       "label": "Excalidraw Studio",
       "description": "Browse your diagrams as .excalidraw files.",
-      "icon": "assets/plugin.svg",
+      "icon": "assets/plugin.png",
       "schemes": [
         "excalidraw"
       ],

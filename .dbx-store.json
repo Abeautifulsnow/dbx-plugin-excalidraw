@@ -1,7 +1,7 @@
 {
   "name": "Excalidraw Studio",
   "description": "A lightweight, local-first diagramming workspace powered by Excalidraw, embedded directly in DBX.",
-  "icon": "assets/plugin.svg",
+  "icon": "assets/plugin.png",
   "tags": ["diagram", "drawing", "whiteboard", "excalidraw"],
   "permissions": ["host.workbench", "host.filesystem", "host.plans:read", "host.ai"],
   "source": "https://github.com/Abeautifulsnow/dbx-plugin-excalidraw",
