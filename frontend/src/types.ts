@@ -71,6 +71,14 @@ export interface PlanResult {
   warnings: string[];
 }
 
+/** Payload of `clipboard.readImage`; the host only ever returns PNG. */
+export interface ClipboardImagePayload {
+  contentType: "image/png";
+  dataBase64: string;
+  width: number;
+  height: number;
+}
+
 /** One-way payload for `ai.openConversation` — validated by the host. */
 export interface AiConversationOptions {
   /** Conversation heading, 1-200 characters after trimming. */
@@ -106,7 +114,21 @@ export interface DbxPluginBridge {
   /** Opens the host's own file manager on one of this plugin's filesystem providers. */
   openFilesystem?(providerId: string, childContext?: FilesystemChildContext): Promise<void>;
   /** Capability broadcast from the init frame; a missing key means unsupported. */
-  capabilities?: { downloadFile: boolean; planApi: boolean; storage: boolean; ai: boolean };
+  capabilities?: {
+    downloadFile: boolean;
+    planApi: boolean;
+    storage: boolean;
+    ai: boolean;
+    /** Keys below arrived with Host API 1.3/1.4 init frames; on older hosts they
+     *  are absent, and absence means unsupported. */
+    schemaMetadataApi?: boolean;
+    dataApi?: boolean;
+    aiRecommendations?: boolean;
+    clipboardWrite?: boolean;
+    clipboardRead?: boolean;
+    clipboardImageRead?: boolean;
+    mediaUrl?: boolean;
+  };
   /** Plan API (Host API 1.2): read-only plan metadata for a stored connection. */
   getPlanCapabilities?(connectionId: string): Promise<PlanCapabilities>;
   /** Plan API (Host API 1.2): the host runs the estimated EXPLAIN itself. */
@@ -118,6 +140,15 @@ export interface DbxPluginBridge {
   /** Persist bytes through the host's native save dialog. */
   saveFile?(options: { fileName?: string; contentType?: string }, data: Uint8Array): Promise<{ path: string } | null>;
   copy?(text: string): Promise<void>;
+  /** Host clipboard bridge (Host API 1.3). `writeText` rides the older
+   *  `host.copy` path and needs no permission; the reads need
+   *  `host.clipboard:read` and are session-gated + rate-limited by the host.
+   *  The sub-object is absent on older hosts entirely. */
+  clipboard?: {
+    writeText(text: string): Promise<unknown>;
+    readText(): Promise<string>;
+    readImage(): Promise<ClipboardImagePayload>;
+  };
 }
 
 declare global {

@@ -114,6 +114,27 @@ export async function persistImportedScene(
   return api.saveScene(documentId, scene);
 }
 
+/**
+ * Makes sure the asset bytes are in the content-addressed store, uploading
+ * them once per session per hash. Shared by scene persistence and the
+ * clipboard image path so both dedupe identically.
+ */
+export async function ensureAssetUploaded(
+  documentId: string,
+  hash: string,
+  mimeType: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  if (knownAssets.has(hash)) {
+    return;
+  }
+  const stat = await api.statAsset(hash);
+  if (!stat.exists) {
+    await uploadAsset(documentId, hash, mimeType, bytes);
+  }
+  knownAssets.add(hash);
+}
+
 async function stripAndUploadFiles(
   files: Record<string, StoredSceneFile>,
   documentId: string,
@@ -133,13 +154,7 @@ async function stripAndUploadFiles(
       continue;
     }
     const hash = await sha256Hex(bytes);
-    if (!knownAssets.has(hash)) {
-      const stat = await api.statAsset(hash);
-      if (!stat.exists) {
-        await uploadAsset(documentId, hash, mimeType, bytes);
-      }
-      knownAssets.add(hash);
-    }
+    await ensureAssetUploaded(documentId, hash, mimeType, bytes);
     stripped[fileId] = {
       id: file.id ?? fileId,
       mimeType: file.mimeType,

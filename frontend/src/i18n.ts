@@ -82,6 +82,16 @@ export interface Strings {
   planAiPrompt: string;
   planWarningsHeading: string;
   planWarningsMore: string;
+  copySceneJson: string;
+  copySceneDone: string;
+  copySceneFailed: string;
+  paste: string;
+  pasteScene: string;
+  pasteImage: string;
+  pasteSceneDone: string;
+  pasteImageDone: string;
+  pasteSceneInvalid: string;
+  pasteFailed: string;
 }
 
 const en: Strings = {
@@ -166,6 +176,16 @@ const en: Strings = {
   planAiPrompt: "Here is a query's estimated execution plan captured by DBX (EXPLAIN only, never executed). Explain the plan: what the query does step by step, where the cost concentrates (the highest-cost node is marked '<-- highest cost'), whether row estimates look suspicious, and which concrete changes (indexes, query rewrites, settings) would help. Reference node names. Answer in the user's language.",
   planWarningsHeading: "Plan warnings",
   planWarningsMore: "+{n} more",
+  copySceneJson: "Copy scene JSON",
+  copySceneDone: "Scene JSON copied to the clipboard.",
+  copySceneFailed: "Could not write to the clipboard.",
+  paste: "Paste",
+  pasteScene: "Scene from clipboard",
+  pasteImage: "Image from clipboard",
+  pasteSceneDone: "Pasted {n} elements onto the canvas.",
+  pasteImageDone: "Image added to the canvas.",
+  pasteSceneInvalid: "The clipboard does not hold a valid Excalidraw scene.",
+  pasteFailed: "Could not read the clipboard.",
 };
 
 const zh: Strings = {
@@ -250,6 +270,16 @@ const zh: Strings = {
   planAiPrompt: "以下是 DBX 取到的查询预估执行计划（仅 EXPLAIN，未真正执行）。请解读该计划：逐步说明查询实际在做什么、成本集中在哪里（最高成本节点已标注 '<-- highest cost'）、行数估算是否可疑，并给出具体可落地的优化建议（索引、改写、参数）。请引用节点名，并用用户的语言回答。",
   planWarningsHeading: "计划警告",
   planWarningsMore: "另有 {n} 条",
+  copySceneJson: "复制场景 JSON",
+  copySceneDone: "场景 JSON 已复制到剪贴板。",
+  copySceneFailed: "无法写入剪贴板。",
+  paste: "粘贴",
+  pasteScene: "剪贴板中的场景",
+  pasteImage: "剪贴板中的图片",
+  pasteSceneDone: "已粘贴 {n} 个元素到画布。",
+  pasteImageDone: "图片已添加到画布。",
+  pasteSceneInvalid: "剪贴板里没有有效的 Excalidraw 场景。",
+  pasteFailed: "无法读取剪贴板。",
 };
 
 export const strings: Record<Lang, Strings> = { en, zh };

@@ -35,6 +35,14 @@ leaving DBX — no cloud service involved.
   bytes to the host's own save dialog (`host.saveFile`) so you can pick the
   destination; the plugin folder remains the destination — and the fallback —
   everywhere else.
+- **Clipboard** — the export menu can copy the whole scene as Excalidraw JSON
+  (permission-free, through the host's clipboard bridge, degrading to the
+  older `host.copy`). On hosts that advertise the clipboard-read capability,
+  the editor gains a *Paste* menu that drops a scene copied from another
+  diagram — ids, groups and bindings remapped so nothing collides — or a
+  screenshot straight from the system clipboard onto the canvas; pasted images
+  land in the same content-addressed asset store as any other picture. The
+  paste entries hide themselves on hosts or web builds without the capability.
 - **Preferences** — the result view's row count and the home screen's search
   term are remembered across sessions, stored by the sidecar next to the
   documents.
@@ -147,6 +155,7 @@ time. Two worth knowing about:
 | Plan canvas (plan API) | Needs the Host API 1.2 plan methods; the entry is gated on `capabilities.planApi` — see [Plan canvas](#plan-canvas) |
 | Ask AI (plan review) | Additionally needs a host with the built-in AI panel; gated on `capabilities.ai` and declared as `host.ai` |
 | *Use the system save dialog* | Needs a build carrying `host.saveFile`; without it the export falls back to the plugin folder and the toast says so |
+| Paste from clipboard | Needs a desktop host advertising `clipboardRead` / `clipboardImageRead` (Host API 1.3 bridge); the paste menu hides when the init frame lacks the capability. *Copy scene JSON* degrades to the older `host.copy` and is available everywhere. The declared `host.clipboard:read` carries the same install-time caveat as `host.plans:read`: a host whose permission whitelist predates it reports the whole plugin incompatible |
 
 There is no host-side version gate to read: the `init`, `context` and `env`
 frames carry no version or feature flags, and `init.capabilities` is a
@@ -299,6 +308,11 @@ is on; install them with "Install .dbxp" or by dropping the file on that page.
   with `host.saveFile`, the *Save as…* entries write to a location the user picks
   instead. Export names are capped at 160 runes (long document titles are
   truncated automatically).
+- Clipboard reads go through the host: the first read per session asks for
+  confirmation, reads are rate-limited (1 s) and audited by the host, and
+  clipboard text is capped at 2 MiB — a scene with embedded images can exceed
+  that, so use the `.excalidraw` export for those. Pasted images are PNG, as
+  the host only serves PNG from the clipboard.
 - Fonts are vendored and `EXCALIDRAW_ASSET_PATH` resolves against the document
   base URL; re-verify rendering in the real DBX sandbox.
 

@@ -511,6 +511,10 @@ body {
   background: var(--st-danger);
 }
 
+.toast--info {
+  background: var(--st-accent);
+}
+
 .spinner {
   width: 28px;
   height: 28px;

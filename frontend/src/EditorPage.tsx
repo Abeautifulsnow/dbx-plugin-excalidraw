@@ -5,6 +5,15 @@ import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { api } from "./api";
 import { exportScene, saveSceneViaHost, type ExportKind } from "./export";
 import { ExcalidrawEditor } from "./ExcalidrawEditor";
+import {
+  buildImageInsert,
+  ClipboardError,
+  copySceneToClipboard,
+  readClipboardImage,
+  readSceneFromClipboard,
+  sceneCenter,
+  type Offset,
+} from "./clipboard";
 import { revealInFileManager, type RevealTarget } from "./fileManager";
 import { loadDocument, persistScene } from "./persistence";
 import type { DocumentMeta } from "./types";
@@ -26,6 +35,7 @@ type SceneSnapshot = { elements: readonly ExcalidrawElement[]; appState: AppStat
 interface ExportMenuActions {
   exportAs: (kind: ExportKind, delivery: ExportDelivery) => void;
   reveal: (target: RevealTarget) => void;
+  copyJson: () => void;
 }
 
 /**
@@ -34,9 +44,10 @@ interface ExportMenuActions {
  * what is on screen; every dependency is passed in because none of it is state
  * the render needs.
  *
- * Two report channels, for two different kinds of news: `reportReceipt`
- * carries the location of a file that is now on disk and stays until dismissed,
- * `report` carries a transient failure and nothing else.
+ * Three report channels: `reportReceipt` carries the location of a file that
+ * is now on disk and stays until dismissed, `report` carries a transient
+ * failure, and `reportInfo` a transient confirmation (for news like a
+ * clipboard write that cannot be rediscovered later either).
  */
 function useExportMenuActions(params: {
   meta: DocumentMeta | null;
@@ -44,11 +55,12 @@ function useExportMenuActions(params: {
   files: () => Record<string, BinaryFileData>;
   t: Strings;
   report: (message: string) => void;
+  reportInfo: (message: string) => void;
   /** Only ever called with a location that is now on disk. */
   reportReceipt: (receipt: ExportReceipt) => void;
   closeMenu: () => void;
 }): ExportMenuActions {
-  const { meta, snapshot, files, t, report, reportReceipt, closeMenu } = params;
+  const { meta, snapshot, files, t, report, reportInfo, reportReceipt, closeMenu } = params;
 
   const exportAs = async (kind: ExportKind, delivery: ExportDelivery) => {
     closeMenu();
@@ -94,6 +106,21 @@ function useExportMenuActions(params: {
     }
   };
 
+  const copyJson = async () => {
+    closeMenu();
+    const current = snapshot.current;
+    if (!current || !meta) {
+      return;
+    }
+    try {
+      await copySceneToClipboard(current.elements, current.appState, files());
+      reportInfo(t.copySceneDone);
+    } catch (error) {
+      console.error("[editor] scene copy failed", error);
+      report(t.copySceneFailed);
+    }
+  };
+
   const reveal = async (target: RevealTarget) => {
     closeMenu();
     try {
@@ -107,10 +134,17 @@ function useExportMenuActions(params: {
   return {
     exportAs: (kind, delivery) => void exportAs(kind, delivery),
     reveal: (target) => void reveal(target),
+    copyJson: () => void copyJson(),
   };
 }
 
 const AUTOSAVE_DELAY_MS = 1000;
+
+/** Transient toast: failures in the error variant, confirmations in info. */
+type Toast = { variant: "info" | "error"; message: string };
+
+/** A pasted scene is nudged so it does not land exactly on existing content. */
+const PASTE_NUDGE: Offset = { x: 32, y: 32 };
 
 interface EditorPageProps {
   docId: string;
@@ -129,8 +163,9 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [titleDraft, setTitleDraft] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
   const [receipt, reportReceipt] = useState<ExportReceipt | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast | null>(null);
 
   const apiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const latestRef = useRef<{ elements: readonly ExcalidrawElement[]; appState: AppState } | null>(null);
@@ -317,7 +352,7 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
     } catch (error) {
       console.error("[editor] rename failed", error);
       setTitleDraft(meta.name);
-      setToast(t.renameFailed);
+      setToast({ variant: "error", message: t.renameFailed });
     }
   };
 
@@ -326,10 +361,65 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
     snapshot: latestRef,
     files: referencedFiles,
     t,
-    report: setToast,
+    report: (message) => setToast({ variant: "error", message }),
+    reportInfo: (message) => setToast({ variant: "info", message }),
     reportReceipt,
     closeMenu: () => setExportOpen(false),
   });
+
+  // The clipboard reads exist only on hosts that advertise them (init-frame
+  // capability keys, absent keys meaning unsupported), so the paste menu hides
+  // itself rather than offering entries that can only fail. The copy entry in
+  // the export menu stays visible everywhere: it degrades through `copy`.
+  const capabilities = window.dbxPlugin?.capabilities;
+  const canReadClipboard = capabilities?.clipboardRead === true;
+  const canReadClipboardImage = capabilities?.clipboardImageRead === true;
+
+  const pasteFailureMessage = (error: unknown): string =>
+    error instanceof ClipboardError && error.code === "INVALID_SCENE" ? t.pasteSceneInvalid : t.pasteFailed;
+
+  const pasteSceneFromClipboard = async () => {
+    setPasteOpen(false);
+    const instance = apiRef.current;
+    if (!instance) {
+      return;
+    }
+    // The offset decision can use the pre-await snapshot, but the merge must
+    // not: a clipboard read can wait out the host's rate limit, and merging a
+    // stale array would silently drop whatever was drawn in the meantime.
+    const canvasWasEmpty = !latestRef.current || latestRef.current.elements.length === 0;
+    try {
+      const pasted = await readSceneFromClipboard(canvasWasEmpty ? { x: 0, y: 0 } : PASTE_NUDGE);
+      const pastedFiles = Object.values(pasted.files);
+      if (pastedFiles.length > 0) {
+        instance.addFiles(pastedFiles);
+      }
+      instance.updateScene({ elements: [...(latestRef.current?.elements ?? []), ...pasted.elements] });
+      setToast({ variant: "info", message: format(t.pasteSceneDone, pasted.elements.length) });
+    } catch (error) {
+      console.error("[editor] scene paste failed", error);
+      setToast({ variant: "error", message: pasteFailureMessage(error) });
+    }
+  };
+
+  const pasteImageFromClipboard = async () => {
+    setPasteOpen(false);
+    const instance = apiRef.current;
+    if (!instance || !meta) {
+      return;
+    }
+    try {
+      const image = await readClipboardImage();
+      const position = sceneCenter(latestRef.current?.elements ?? []);
+      const insert = await buildImageInsert(meta.id, image, position);
+      instance.addFiles([insert.file]);
+      instance.updateScene({ elements: [...(latestRef.current?.elements ?? []), insert.element] });
+      setToast({ variant: "info", message: t.pasteImageDone });
+    } catch (error) {
+      console.error("[editor] image paste failed", error);
+      setToast({ variant: "error", message: pasteFailureMessage(error) });
+    }
+  };
 
   if (phase === "loading") {
     return (
@@ -382,6 +472,28 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
         <span className={`save-status save-status--${saveStatus}`} role="status">
           {statusText}
         </span>
+        {canReadClipboard && (
+          <div className="export-menu">
+            <button type="button" className="btn btn--ghost" onClick={() => setPasteOpen((open) => !open)} aria-haspopup="menu" aria-expanded={pasteOpen}>
+              {t.paste} ▾
+            </button>
+            {pasteOpen && (
+              <>
+                <div className="export-menu__overlay" onClick={() => setPasteOpen(false)} />
+                <div className="export-menu__list" role="menu">
+                  <button type="button" role="menuitem" onClick={() => void pasteSceneFromClipboard()}>
+                    {t.pasteScene}
+                  </button>
+                  {canReadClipboardImage && (
+                    <button type="button" role="menuitem" onClick={() => void pasteImageFromClipboard()}>
+                      {t.pasteImage}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
         <div className="export-menu">
           <button type="button" className="btn btn--ghost" onClick={() => setExportOpen((open) => !open)} aria-haspopup="menu" aria-expanded={exportOpen}>
             {t.export} ▾
@@ -413,6 +525,10 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
                 <button type="button" role="menuitem" onClick={() => actions.reveal("exports")}>
                   {t.openExportsFolder}
                 </button>
+                <div className="export-menu__separator" role="separator" />
+                <button type="button" role="menuitem" onClick={() => actions.copyJson()}>
+                  {t.copySceneJson}
+                </button>
               </div>
             </>
           )}
@@ -443,13 +559,13 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
           theme={theme}
           langCode={excalidrawLangCode(locale)}
           onChange={handleChange}
-          onExternalFileDrop={() => setToast(t.dropBlocked)}
+          onExternalFileDrop={() => setToast({ variant: "error", message: t.dropBlocked })}
           onApi={(instance) => {
             apiRef.current = instance;
           }}
         />
       )}
-      {toast && <div className="toast toast--error">{toast}</div>}
+      {toast && <div className={`toast toast--${toast.variant}`}>{toast.message}</div>}
     </div>
   );
 }

@@ -3,7 +3,7 @@
   "manifest_version": 1,
   "id": "io.dbx.excalidraw",
   "name": "Excalidraw Studio",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "runstone",
   "description": "A lightweight, local-first diagramming workspace powered by Excalidraw, embedded directly in DBX.",
   "icon": "assets/plugin.png",
@@ -15,7 +15,8 @@
     "host.workbench",
     "host.filesystem",
     "host.plans:read",
-    "host.ai"
+    "host.ai",
+    "host.clipboard:read"
   ],
   "entrypoints": {
     "backend": {
