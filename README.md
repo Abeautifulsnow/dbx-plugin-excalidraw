@@ -283,7 +283,10 @@ is on; install them with "Install .dbxp" or by dropping the file on that page.
    drifted tree cannot be released. The script refuses to run on a dirty or
    unsynced tree, derives the tag
    from the manifest version (the store validates against it), generates
-   notes from `.dbx-store.json` plus the commit log, and creates the GitHub
+   notes from `.dbx-store.json` plus the commit log — grouped into
+   ✨ 新增 / 🔧 优化 / 🐛 修复 with conventional-commit prefixes stripped and
+   any `(#123)` references kept as GitHub links; `--preview-notes` prints the
+   body without publishing — and creates the GitHub
    Release with the credentials git already has. CI then builds the frontend
    and one unsigned `.dbxp` candidate per platform together with
    `release-candidates.json`.

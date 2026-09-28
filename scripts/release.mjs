@@ -1,15 +1,19 @@
 // One-command release automation for this plugin.
 //
-//   node scripts/release.mjs [--prerelease] [--notes "extra notes"]
+//   node scripts/release.mjs [--prerelease] [--notes "extra notes"] [--preview-notes]
 //
 // What it does:
 //   1. Safety checks: clean worktree, on main, in sync with origin, SemVer
 //      without build metadata (the store rejects "+" in versions).
 //   2. Reads the version from manifest.json — the single source of truth —
 //      and derives the tag v<version> (fails if the tag already exists).
-//   3. Creates the GitHub Release via the API using the credentials the
+//   3. Builds the release body: the store releaseNotes paragraph plus the
+//      commits since the previous tag, grouped into three user-facing themes
+//      (✨ 新增 / 🔧 优化 / 🐛 修复) with conventional-commit prefixes stripped.
+//      `--preview-notes` prints the body and exits without publishing.
+//   4. Creates the GitHub Release via the API using the credentials the
 //      git CLI already has (git credential helper; no extra secret needed).
-//   4. The published release triggers .github/workflows/plugin-release.yml,
+//   5. The published release triggers .github/workflows/plugin-release.yml,
 //      which builds the frontend and one unsigned .dbxp candidate per
 //      platform, then uploads them together with release-candidates.json.
 //
@@ -87,6 +91,57 @@ function ghApi(method, apiPath, body, token) {
   }
 }
 
+/**
+ * The three user-facing themes of the release notes, in display order. Every
+ * conventional-commit type maps into one of them; subjects without a
+ * recognizable prefix land in 优化 so nothing is silently dropped.
+ */
+const NOTE_SECTIONS = [
+  { heading: "✨ 新增", types: new Set(["feat"]) },
+  {
+    heading: "🔧 优化",
+    types: new Set(["perf", "refactor", "docs", "chore", "ci", "build", "test", "style"]),
+    catchAll: true,
+  },
+  { heading: "🐛 修复", types: new Set(["fix"]) },
+];
+
+/**
+ * Groups commit subjects into the themed sections and strips the
+ * conventional-commit prefix — `chore(assets):` is maintainer information,
+ * not something a release reader needs. A `(#123)` reference in the subject
+ * is kept as-is: GitHub renders it as a link to that issue or PR, and direct
+ * pushes simply stay plain text.
+ */
+function themedCommitSections(commitSubjects) {
+  const sections = NOTE_SECTIONS.map((section) => ({ ...section, entries: [] }));
+  for (const subject of commitSubjects) {
+    const match = subject.match(/^(\w+)(!)?(?:\(([^)]*)\))?:\s*(.+)$/);
+    const type = match ? match[1] : "";
+    let target = sections.find((section) => section.types.has(type));
+    if (!target) {
+      target = sections.find((section) => section.catchAll);
+    }
+    const entry = match ? match[4] : subject;
+    target.entries.push(match && match[2] ? `${entry} ⚠️ BREAKING` : entry);
+  }
+  return sections
+    .filter((section) => section.entries.length > 0)
+    .map((section) => [`#### ${section.heading}`, ...section.entries.map((entry) => `- ${entry}`)].join("\n"));
+}
+
+function buildReleaseBody(store, previousTag, commitSubjects, extraNotes) {
+  const themed = themedCommitSections(commitSubjects);
+  const changesHeading = previousTag ? `### Changes since ${previousTag}` : "### Commits";
+  return [
+    store.releaseNotes || "",
+    themed.length > 0 ? [changesHeading, ...themed].join("\n\n") : "",
+    extraNotes ? `\n${extraNotes}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 /** Runs a gate script and aborts the release when it fails. */
 function requireScript(name, failureMessage) {
   const result = spawnSync(process.execPath, [path.join(repoRoot, "scripts", name)], {
@@ -131,10 +186,9 @@ function preflight() {
 function main() {
   const args = process.argv.slice(2);
   const prerelease = args.includes("--prerelease");
+  const preview = args.includes("--preview-notes");
   const extraNotesIndex = args.indexOf("--notes");
   const extraNotes = extraNotesIndex >= 0 ? args[extraNotesIndex + 1] : "";
-
-  preflight();
 
   // 2. Version from manifest.json — the store validates against it.
   const manifest = JSON.parse(readFileSync(path.join(repoRoot, "manifest.json"), "utf8"));
@@ -144,6 +198,30 @@ function main() {
     process.exit(1);
   }
   const tag = `v${version}`;
+  const store = JSON.parse(readFileSync(path.join(repoRoot, ".dbx-store.json"), "utf8"));
+
+  // 3. Release notes: store releaseNotes + the commits since the previous
+  // tag, grouped into themed sections. The tag being created does not exist
+  // yet — GitHub mints it from the API call below — so the previous tag is
+  // the latest one reachable from HEAD. Release tags are minted by the API
+  // and never pushed by this repo, so fetch them before describing; without
+  // this a fresh clone describes the previous-previous release and the notes
+  // silently cover two versions.
+  git(["fetch", "--tags", "origin"]);
+  const previousTag = git(["describe", "--tags", "--abbrev=0", "HEAD"]) || "";
+  const logRange = previousTag ? `${previousTag}..HEAD` : "HEAD";
+  const commitSubjects = git(["log", "--no-merges", "--pretty=format:%s", logRange])
+    .split("\n")
+    .filter((line) => line && !line.startsWith("Merge "));
+  const body = buildReleaseBody(store, previousTag, commitSubjects, extraNotes);
+
+  if (preview) {
+    console.log(`[release] preview of the ${tag} release body:\n`);
+    console.log(body || "(empty)");
+    return;
+  }
+
+  preflight();
 
   const localTag = git(["tag", "-l", tag]);
   const remoteTag = git(["ls-remote", "--tags", "origin", `refs/tags/${tag}`]);
@@ -152,25 +230,7 @@ function main() {
     process.exit(1);
   }
 
-  const store = JSON.parse(readFileSync(path.join(repoRoot, ".dbx-store.json"), "utf8"));
   const token = githubToken();
-
-  // 3. Release notes: store releaseNotes + commits since the previous tag.
-  // The tag being created does not exist yet — GitHub mints it from the API
-  // call below — so the previous tag is the latest one reachable from HEAD.
-  const previousTag = git(["describe", "--tags", "--abbrev=0", "HEAD"]) || "";
-  const logRange = previousTag ? `${previousTag}..HEAD` : "HEAD";
-  const commits = git(["log", "--no-merges", "--pretty=format:- %s", logRange])
-    .split("\n")
-    .filter((line) => line && !line.startsWith("- Merge"));
-  const body = [
-    store.releaseNotes || "",
-    previousTag ? `### Changes since ${previousTag}` : "### Commits",
-    ...commits,
-    extraNotes ? `\n${extraNotes}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
 
   console.log(`[release] creating ${prerelease ? "prerelease" : "release"} ${tag} for ${manifest.id}@${version}...`);
   const response = ghApi(
