@@ -55,10 +55,10 @@ ${s.children.length ? `<ul>${s.children.map((c) => `<li><a href="#${c.id}">${esc
 
 const stats = [
   ['609', '已核验条目'],
-  ['9', '勘察维度'],
-  ['5', '贡献点类型'],
-  ['54', '跨维度矛盾'],
-  ['0', '被证伪剔除'],
+  ['8', '勘察维度'],
+  ['7', '贡献点类型'],
+  ['1.4.0', 'Host API（0.6.26）'],
+  ['58', '插件 Tauri 命令'],
 ]
 
 const page = `<title>DBX 插件能力与事件全谱</title>
@@ -315,10 +315,10 @@ ${tocHtml}
       <h1>DBX 插件能力与事件全谱</h1>
       <p class="lede">DBX 宿主向插件露出的全部面：清单贡献点、<code>window.dbxPlugin</code> 前端 API、宿主↔sidecar 的 JSON-RPC 协议、事件通道、权限闸门、SDK 工具链，以及各处尺寸与版本门槛。每一条都带 <code>file:line</code> 锚点。</p>
       <div class="metaline">
-        <span><b>host_api</b> 1.3.0</span>
+        <span><b>host_api</b> 1.4.0（DBX 0.6.26 · main@adaaec5a3）</span>
         <span><b>protocol_version</b> 1</span>
         <span><b>manifest_version</b> 1</span>
-        <span><b>方法</b> 8 维并行勘察 + 对抗式校验</span>
+        <span><b>方法</b> 8 维并行勘察 + 对抗式校验 + 增量同步（2026-09-28）</span>
       </div>
       <div class="stats">
         ${stats.map(([n, l]) => `<div class="stat"><b>${n}</b><span>${l}</span></div>`).join('\n        ')}
@@ -339,7 +339,7 @@ ${html}
     </article>
 
     <footer class="foot">
-      生成方式：8 个维度并行勘察 → 每维度一个对抗式校验 agent 回到 <code>file:line</code> 逐条证伪 → 分章节撰写。<br>
+      生成方式：8 个维度并行勘察 → 每维度一个对抗式校验 agent 回到 <code>file:line</code> 逐条证伪 → 分章节撰写；最近一次增量同步 2026-09-28（宿主 main@adaaec5a3，四轮锚点重映射 + 语义合并）。<br>
       条目数 609 · 被证伪剔除 0 · 校验更正 4 · 跨维度矛盾 54 · 未覆盖缺口已补（第 12 节）。
     </footer>
   </main>
