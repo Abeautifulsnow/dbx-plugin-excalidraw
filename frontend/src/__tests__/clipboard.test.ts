@@ -153,6 +153,34 @@ describe("copySceneToClipboard", () => {
     expect(error).toBeInstanceOf(ClipboardError);
     expect((error as { code: string }).code).toBe("WRITE_FAILED");
   });
+
+  it("refuses a scene whose request envelope exceeds the host's 2 MiB cap without touching the bridge", async () => {
+    const writeText = vi.fn(async () => undefined);
+    stubBridge({ clipboard: { writeText } });
+    const { copySceneToClipboard, ClipboardError } = await freshClipboard();
+    const excalidraw = await import("@excalidraw/excalidraw");
+    vi.mocked(excalidraw.serializeAsJSON).mockReturnValueOnce("x".repeat(3 * 1024 * 1024));
+
+    const error = await copySceneToClipboard([], {}, {}).then(() => null, (e: unknown) => e);
+    expect(error).toBeInstanceOf(ClipboardError);
+    expect((error as { code: string }).code).toBe("WRITE_FAILED");
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it("measures the request envelope, not the raw scene string: escaping alone can cross the cap", async () => {
+    const writeText = vi.fn(async () => undefined);
+    stubBridge({ clipboard: { writeText } });
+    const { copySceneToClipboard, ClipboardError } = await freshClipboard();
+    const excalidraw = await import("@excalidraw/excalidraw");
+    // ~1.1M newlines: raw bytes sit under the cap, but the JSON-encoded
+    // envelope escapes each to \n and doubles past it — exactly what the
+    // host's params-level byte check would reject.
+    vi.mocked(excalidraw.serializeAsJSON).mockReturnValueOnce("\n".repeat(1_100_000));
+
+    const error = await copySceneToClipboard([], {}, {}).then(() => null, (e: unknown) => e);
+    expect(error).toBeInstanceOf(ClipboardError);
+    expect(writeText).not.toHaveBeenCalled();
+  });
 });
 
 describe("readSceneFromClipboard", () => {

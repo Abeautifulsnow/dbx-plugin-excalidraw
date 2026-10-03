@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { api } from "./api";
+import { withCause } from "./errors";
 import { revealInFileManager } from "./fileManager";
 import { setPref, usePrefs } from "./prefs";
 import {
@@ -71,6 +72,7 @@ export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProp
   const actions = useResultViewActions({
     connectionId: data.connectionId,
     database: data.database,
+    schema: data.schema,
     sql: data.sql,
     scene: layout.scene,
     t,
@@ -146,12 +148,14 @@ interface ResultViewActions {
 function useResultViewActions(params: {
   connectionId: string;
   database: string;
+  /** The tab's schema; the plan EXPLAIN needs it to resolve unqualified names. */
+  schema: string;
   sql: string;
   scene: GridSceneResult["scene"];
   t: Strings;
   onOpen: (meta: DocumentMeta) => void;
 }): ResultViewActions {
-  const { connectionId, database, sql, scene, t, onOpen } = params;
+  const { connectionId, database, schema, sql, scene, t, onOpen } = params;
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -174,29 +178,42 @@ function useResultViewActions(params: {
   // capabilities first (a connection without estimated-plan support should say
   // so instead of surfacing a host-side EXPLAIN error), then explain, then
   // parse. A null return means the failure slot already carries the reason.
+  // Thrown host errors are caught here too: whichever button ran the pipeline,
+  // a plan failure must say so — explainPlanAi's own catch would otherwise
+  // blame the AI panel for a failed EXPLAIN.
   const fetchPlan = async (): Promise<{ parsed: ParsedPlan; dbType: string; warnings: string[] } | null> => {
     const bridge = window.dbxPlugin;
     if (!bridge?.getPlanCapabilities || !bridge.explainPlan) {
       setFailure(t.planFailed);
       return null;
     }
-    const caps = await bridge.getPlanCapabilities(connectionId);
-    if (!caps?.supports?.estimatedPlan) {
-      setFailure(t.planUnsupported);
+    try {
+      const caps = await bridge.getPlanCapabilities(connectionId);
+      if (!caps?.supports?.estimatedPlan) {
+        setFailure(t.planUnsupported);
+        return null;
+      }
+      const result = await bridge.explainPlan({
+        connectionId,
+        database: database || undefined,
+        // The host applies the tab schema as search_path on its own query path
+        // but not here; without it unqualified names resolve against the
+        // default search_path and miss the tables the result set came from.
+        schema: schema || undefined,
+        sql,
+        mode: "estimated",
+      });
+      const parsed = parsePlan(result.format, result.rawPlan);
+      if (!parsed) {
+        setFailure(t.planUnreadable);
+        return null;
+      }
+      return { parsed, dbType: result.dbType || caps.dbType || "", warnings: result.warnings ?? [] };
+    } catch (cause) {
+      console.error("[result-view] plan fetch failed", cause);
+      setFailure(withCause(t.planFailed, cause));
       return null;
     }
-    const result = await bridge.explainPlan({
-      connectionId,
-      database: database || undefined,
-      sql,
-      mode: "estimated",
-    });
-    const parsed = parsePlan(result.format, result.rawPlan);
-    if (!parsed) {
-      setFailure(t.planUnreadable);
-      return null;
-    }
-    return { parsed, dbType: result.dbType || caps.dbType || "", warnings: result.warnings ?? [] };
   };
 
   const createPlan = async () => {
@@ -227,7 +244,7 @@ function useResultViewActions(params: {
       onOpen(meta);
     } catch (cause) {
       console.error("[result-view] plan canvas failed", cause);
-      setFailure(t.planFailed);
+      setFailure(withCause(t.planFailed, cause));
     } finally {
       setBusy(false);
     }
@@ -250,7 +267,9 @@ function useResultViewActions(params: {
         return;
       }
       const context = buildPlanAiContext(fetched.parsed, { dbType: fetched.dbType, sql, warnings: fetched.warnings });
-      if (JSON.stringify(context).length > 2 * 1024 * 1024) {
+      // The host caps the context in UTF-8 bytes, not UTF-16 string lengths;
+      // measure the same way or CJK-heavy plans slip past this check.
+      if (new TextEncoder().encode(JSON.stringify(context)).byteLength > 2 * 1024 * 1024) {
         setFailure(t.planAiTooLarge);
         return;
       }
@@ -258,7 +277,7 @@ function useResultViewActions(params: {
       await bridge.ai.openConversation({ title, prompt: t.planAiPrompt, context, send: true });
     } catch (cause) {
       console.error("[result-view] ai explain failed", cause);
-      setFailure(t.planAiFailed);
+      setFailure(withCause(t.planAiFailed, cause));
     } finally {
       setBusy(false);
     }

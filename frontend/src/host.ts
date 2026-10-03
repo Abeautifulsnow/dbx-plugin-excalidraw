@@ -119,6 +119,7 @@ export function readResultSet(context: Record<string, unknown>): ResultSetContex
   return {
     connectionId: asString(context.connectionId),
     database: asString(context.database),
+    schema: asString(context.schema),
     sql: asString(context.sql),
     result: { columns, rows, truncated: raw.truncated === true },
   };

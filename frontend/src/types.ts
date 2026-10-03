@@ -38,6 +38,13 @@ export interface HostLaunch {
 export interface ResultSetContext {
   connectionId: string;
   database: string;
+  /**
+   * The tab's schema, when the host provides one. The plan API needs it: the
+   * host applies the tab schema as `SET search_path` on its own query path but
+   * not on the plan path, so unqualified table names resolve differently
+   * without it. Older hosts omit the field entirely.
+   */
+  schema: string;
   sql: string;
   result: {
     columns: string[];

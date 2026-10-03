@@ -2,7 +2,7 @@
 
 > 本文件是**活的**任务清单：对照 `docs/reference/dbx-plugin-capabilities.md`（同步至 dbx main@adaaec5a3，Host API 1.4.0）维护，记录已实现、待实现、观望与已否决的拓展项。
 > 历史依据见 `out/capability-extension-report.md`（2026-09-21 时点合成报告，其中结论部分已被后续版本落地或证伪，以本文件为准）。
-> 最后更新：0.3.1 已发布（2026-09-28，tag v0.3.1）。
+> 最后更新：0.3.1 已发布（2026-09-28，tag v0.3.1）；2026-10-03 桥限计量审计与非目标重裁（守则 §3.7/§3.8、`PRD_V1_REVISIONS.md` §15）。
 
 ## 状态图例
 
@@ -64,8 +64,7 @@
 
 - [ ] **T-C 表结构上画布**（context-menu `menu:"table"` + 声明式 `action.open-workbench` + `getTableMetadata`）
   - 价值：形成"数据/计划/结构"三条上画布产品线，拼 ER 草图。
-  - **前置决策：PRD 修订 R12 明确把"可视化数据库 schema"列为非目标**（`docs/PRD_V1_REVISIONS.md` R12）——需显式豁免，比照旧报告 D-6 对计划树的裁定口径。
-  - 前置：`host.schema:read` 权限三处同步；`contextMenu/table` 的 context 载荷形状文档未写全，动手前先读宿主源码钉死。
+  - ~~前置决策：PRD 修订 R12 明确把"可视化数据库 schema"列为非目标~~ → **2026-10-03 重裁：有条件豁免**（裁定与条件见 `docs/PRD_V1_REVISIONS.md` §15）；剩余前置是权限三处同步 + 读宿主源码钉死 `contextMenu/table` 的 context 载荷形状（文档未写全）。
 - [ ] **T-D filedrop 拖放导入**
   - 已证实：filedrop/dragstate 帧**无权限门**（2026-09-21 复核结案）。
   - 未证实：真实宿主上帧是否到达（dev host 不模拟 webview 级拖放）→ 先做一次性监听实验，再决定是否投入。
@@ -105,6 +104,8 @@
 4. **dev host 不模拟任何新表面**（browser-bridge 缺 queryData/getTableMetadata/clipboard 全部新方法）：本地只做降级路径单测，真机（≥0.6.26 桌面版）验证清单写在 §0。
 5. **敏感权限的用户可见面**：`host.clipboard:read` 已被插件中心标为敏感徽章，`host.data:read` 有逐连接授权对话框；README 与 store releaseNotes 同步表述。
 6. **事件/提示不当真相**：若未来引入 `host.events`，广播会静默丢弃且零订阅即丢——每个消费者仍必须回读权威数据源。
+7. **桥限计量一律按 UTF-8 字节**（2026-10-03 审计结论）：宿主对每个 bridge request 的 **params 对象**做 `TextEncoder().encode(JSON.stringify(params)).byteLength ≤ 2 MiB` 校验（`pluginHostBridge.ts:582→1688`），按 UTF-16 `length` 计量对 CJK 内容会漏判（0.3.2 已修 AI context 一处）；`host.copy` 另有 2M 字符检查，但字节检查是更紧的约束（UTF-8 字节数恒 ≥ UTF-16 code unit 数）。现状：复制场景 JSON 按 request 信封**精确**预检——`host.copy` 的 params 恰为 `{ text }`，插件对 `JSON.stringify({ text: json })` 做 encode 即逐字节复刻宿主计量，仅留 4 KiB 常量余量；`saveScene` 不做插件侧预检——sidecar 本身按 2,000,000 字节拒收（`DOCUMENT_TOO_LARGE`），错误经 withCause 透传；512 KiB 分块与二进制转移路径（saveFile ≤512 MiB、fileTransfer ≤8 MiB）都是字节切片，天然安全。宿主附带发现：readImage 错误文案写 "18 MiB" 而常量是 24 MiB（`pluginHostBridge.ts:861`），下次触宿主时可顺手上报。
+8. **错误透传守则**（2026-10-03 推广）：每个喂给 toast / notice / 状态条的 catch 必须走 `frontend/src/errors.ts` 的 `withCause`（`errorDetail` 用于无基语的地方；分隔符 " — "，双语排版中性）；包装错误把底层宿主错误挂 `cause`（如 `ClipboardError`）。错误 toast 停留 7s（`ERROR_TOAST_MS`，HomePage/EditorPage），info 保持 4s；结果视图的失败提示不自动消失。刻意静默的路径维持原样并注明理由：prefs 读写（写入失败不值得打断）、逐资产下载降级（占位图兜底）、SVG 字体离线注册（有隐藏 live region 上报）。
 
 ---
 

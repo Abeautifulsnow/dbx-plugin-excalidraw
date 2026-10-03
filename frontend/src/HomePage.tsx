@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "./api";
+import { withCause } from "./errors";
 import { persistImportedScene } from "./persistence";
 import { setPref, usePrefs } from "./prefs";
 import type { DocumentMeta } from "./types";
@@ -54,9 +55,16 @@ interface HomePageProps {
 /** Long enough that a burst of typing writes once, short enough that it feels immediate on leaving. */
 const SEARCH_PREF_DELAY_MS = 600;
 
+/** Every toast on this page is an error, and errors now carry their underlying
+ *  cause (see errors.ts) — a driver message takes longer to read than a bare
+ *  "操作失败", so these stay up longer than the info toasts elsewhere. */
+const ERROR_TOAST_MS = 7000;
+
 export function HomePage({ lang, t, onOpen }: HomePageProps) {
   const [documents, setDocuments] = useState<DocumentMeta[] | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  // Full failure line (base copy + underlying cause) for the load notice, so a
+  // dead sidecar is reportable without DevTools; null once the list loads.
+  const [loadFailure, setLoadFailure] = useState<string | null>(null);
   const [query, changeQuery] = useRememberedSearch();
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -65,14 +73,14 @@ export function HomePage({ lang, t, onOpen }: HomePageProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const refresh = async () => {
-    setLoadError(false);
+    setLoadFailure(null);
     try {
       const response = await api.listDocuments();
       setDocuments(response.items);
     } catch (error) {
       console.error("[home] list failed", error);
       setDocuments(null);
-      setLoadError(true);
+      setLoadFailure(withCause(t.loadFailed, error));
     }
   };
 
@@ -84,7 +92,7 @@ export function HomePage({ lang, t, onOpen }: HomePageProps) {
     if (!toast) {
       return;
     }
-    const handle = setTimeout(() => setToast(null), 4000);
+    const handle = setTimeout(() => setToast(null), ERROR_TOAST_MS);
     return () => clearTimeout(handle);
   }, [toast]);
 
@@ -106,7 +114,7 @@ export function HomePage({ lang, t, onOpen }: HomePageProps) {
       onOpen(meta);
     } catch (error) {
       console.error("[home] create failed", error);
-      setToast(t.createFailed);
+      setToast(withCause(t.createFailed, error));
     } finally {
       setBusy(false);
     }
@@ -133,7 +141,9 @@ export function HomePage({ lang, t, onOpen }: HomePageProps) {
       onOpen(meta);
     } catch (error) {
       console.error("[home] import failed", error);
-      setToast(error instanceof ApiError && error.code === "INVALID_SCENE" ? t.importInvalid : t.importFailed);
+      // INVALID_SCENE is the copy the user needs (the file is the problem);
+      // every other failure appends the backend/transport detail.
+      setToast(error instanceof ApiError && error.code === "INVALID_SCENE" ? t.importInvalid : withCause(t.importFailed, error));
     } finally {
       setBusy(false);
       if (fileInputRef.current) {
@@ -156,7 +166,7 @@ export function HomePage({ lang, t, onOpen }: HomePageProps) {
       await refresh();
     } catch (error) {
       console.error("[home] rename failed", error);
-      setToast(t.renameFailed);
+      setToast(withCause(t.renameFailed, error));
     }
   };
 
@@ -170,7 +180,7 @@ export function HomePage({ lang, t, onOpen }: HomePageProps) {
       await refresh();
     } catch (error) {
       console.error("[home] delete failed", error);
-      setToast(t.deleteFailed);
+      setToast(withCause(t.deleteFailed, error));
     }
   };
 
@@ -213,16 +223,16 @@ export function HomePage({ lang, t, onOpen }: HomePageProps) {
         />
       </div>
 
-      {loadError && (
+      {loadFailure && (
         <div className="notice">
-          <p>{t.loadFailed}</p>
+          <p>{loadFailure}</p>
           <button type="button" className="btn" onClick={() => void refresh()}>
             {t.retry}
           </button>
         </div>
       )}
 
-      {!loadError && documents !== null && documents.length === 0 && (
+      {!loadFailure && documents !== null && documents.length === 0 && (
         <div className="empty">
           <div className="empty__icon" aria-hidden="true">
             ✏️
@@ -240,7 +250,7 @@ export function HomePage({ lang, t, onOpen }: HomePageProps) {
         </div>
       )}
 
-      {!loadError && filtered.length > 0 && (
+      {!loadFailure && filtered.length > 0 && (
         <section className="home-grid" aria-label={t.recent}>
           {filtered.map((meta) => (
             <article key={meta.id} className="card" onClick={() => onOpen(meta)}>

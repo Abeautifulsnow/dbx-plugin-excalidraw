@@ -19,11 +19,16 @@ export type ClipboardErrorCode = "READ_FAILED" | "WRITE_FAILED" | "INVALID_SCENE
 
 export class ClipboardError extends Error {
   readonly code: ClipboardErrorCode;
+  /** The underlying host error, when one was caught; failure toasts append it. */
+  readonly cause?: unknown;
 
-  constructor(code: ClipboardErrorCode, message: string) {
+  constructor(code: ClipboardErrorCode, message: string, options?: { cause?: unknown }) {
     super(message);
     this.name = "ClipboardError";
     this.code = code;
+    if (options && "cause" in options) {
+      this.cause = options.cause;
+    }
   }
 }
 
@@ -92,13 +97,27 @@ export async function copySceneToClipboard(
 ): Promise<void> {
   const bridge = getBridge("WRITE_FAILED");
   const json = serializeAsJSON(elements, appState, files, "local");
+  // The host caps every bridge request at 2 MiB of UTF-8 bytes measured over
+  // the JSON-encoded params, and for `host.copy` those params are exactly
+  // `{ text }` — so encoding the same envelope here replicates the host's
+  // measurement byte for byte. Embedding a scene JSON escapes every
+  // tab/newline/quote, which measuring `json` alone would miss. The margin
+  // only absorbs future envelope growth; an over-limit copy that slips past
+  // still surfaces the host's message through the failure toast.
+  const MAX_COPY_REQUEST_BYTES = 2 * 1024 * 1024 - 4 * 1024;
+  if (new TextEncoder().encode(JSON.stringify({ text: json })).byteLength > MAX_COPY_REQUEST_BYTES) {
+    throw new ClipboardError(
+      "WRITE_FAILED",
+      "scene JSON exceeds the host's 2 MiB clipboard request limit (images count); export the scene instead",
+    );
+  }
   if (bridge.clipboard?.writeText) {
     try {
       await bridge.clipboard.writeText(json);
       return;
     } catch (error) {
       console.error("[clipboard] writeText failed", error);
-      throw new ClipboardError("WRITE_FAILED", "the host refused the clipboard write");
+      throw new ClipboardError("WRITE_FAILED", "the host refused the clipboard write", { cause: error });
     }
   }
   if (bridge.copy) {
@@ -107,7 +126,7 @@ export async function copySceneToClipboard(
       return;
     } catch (error) {
       console.error("[clipboard] copy fallback failed", error);
-      throw new ClipboardError("WRITE_FAILED", "the host refused the clipboard write");
+      throw new ClipboardError("WRITE_FAILED", "the host refused the clipboard write", { cause: error });
     }
   }
   throw new ClipboardError("WRITE_FAILED", "this host has no clipboard write surface");
@@ -208,7 +227,7 @@ export async function readSceneFromClipboard(offset: Offset = { x: 0, y: 0 }): P
     text = await bridge.clipboard.readText();
   } catch (error) {
     console.error("[clipboard] readText failed", error);
-    throw new ClipboardError("READ_FAILED", "the host refused the clipboard read");
+    throw new ClipboardError("READ_FAILED", "the host refused the clipboard read", { cause: error });
   }
   const trimmed = text.trim();
   if (!trimmed) {
@@ -272,7 +291,7 @@ export async function readClipboardImage(): Promise<ClipboardImage> {
     payload = await bridge.clipboard.readImage();
   } catch (error) {
     console.error("[clipboard] readImage failed", error);
-    throw new ClipboardError("READ_FAILED", "the host refused or could not serve the clipboard image");
+    throw new ClipboardError("READ_FAILED", "the host refused or could not serve the clipboard image", { cause: error });
   }
   if (payload.contentType !== "image/png" || typeof payload.dataBase64 !== "string" || payload.dataBase64.length === 0) {
     throw new ClipboardError("READ_FAILED", "the clipboard image is not a decodable PNG");

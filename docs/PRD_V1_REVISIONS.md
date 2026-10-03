@@ -194,3 +194,33 @@ Keep the single workbench contribution. Net effect: fewer manifest fields and **
 2. **Product name** — "Diagram Studio" vs "Excalidraw Studio" (R12).
 3. **Asset transport** — chunked JSON (recommended: default transport, no extra permissions) vs framed binary (`host.binary`, more moving parts). Revisit only if S2 shows chunked transfer is too slow.
 4. **Export fallback order** if S3 rejects both the download and clipboard paths.
+
+---
+
+## 15. 非目标重裁（2026-10-03）
+
+> **触发**：本修订定稿时（2026-09-18）插件尚无任何上画布能力；至今已有三条产品线落地——计划上画布 + Ask AI（0.3.0）、剪贴板整合（0.3.1）、结果视图数据网格（0.2.x）。同时 `docs/prd-dbx-integration.md`（2026-09-23）已为「表结构上画布」备好完整设计（F-03/F-05，含验收标准与能力锚点）。R12 所依据的「画布 ≠ schema 工具」前提需要逐条重裁。裁定方式：客观事实直接关闭；产品取舍给出裁定与条件，供后续版本执行。
+
+### 15.1 逐条裁定
+
+| 条目 | 原状态 | 重裁 | 依据 |
+| --- | --- | --- | --- |
+| R12-1 插件 id 命名空间 | 首发前决策 | **关闭（既成事实）**：`io.dbx.excalidraw` 已随 0.3.0 发布，id 发布后不可变，「换 id」选项消失 | §12「Ids are immutable after publishing」 |
+| R12-2 产品名 | 首发前决策 | **关闭（既成事实）**：Excalidraw Studio，manifest/README/商店一致 | 0.3.0 发布时的对齐动作 |
+| R12-3 「可视化数据库 schema」为非目标 | PRD §3 非目标 | **有条件豁免**（见 15.2） | 前提变化：插件已从「通用图示工作区」演化为「DBX 数据工作流的可视化底座」（数据/计划/剪贴板三条线），`prd-dbx-integration.md` 的 F-03/F-05 设计与 probe-and-degrade 哲学齐备；豁免只解除文案与非目标定位的矛盾，不改变任何权限纪律 |
+| 融合 PRD §2 非目标 1：不做 SQL 执行/写库、不做 Actual 计划 | 有效 | **维持** | 插件仍无 SQL 执行权（硬边界）；queryData（roadmap T-A）是宿主门禁的只读通道，不越线；Actual 计划宿主 API 未提供 |
+| 融合 PRD §2 非目标 2：不做 MCP 工具注册 | 有效 | **维持** | 两条消费路径都以已存连接为中心，本插件无 connection-provider（roadmap 👀 项继续等宿主条件） |
+| 融合 PRD §2 非目标 3：不做 AI 输出回流 | 有效 | **维持** | 宿主能力即单向（`ai.openConversation` 无返回通道） |
+| 融合 PRD §2 非目标 4：不做云同步/协作 | 有效 | **维持** | local-first 是对外卖点（0.3.1 README compat 表口径），也是 T-E 图库在线加载取舍的锚点 |
+| 融合 PRD §5 里程碑 0.4.0 行（F-05/F-06/F-04） | 计划 | **顺延（建议）**：0.4.x 主题以 roadmap P1（T-A queryData / T-B AI 推荐）为准——两者依赖的 Host API 1.4 能力晚于融合 PRD 定稿，融合 PRD 未见；F 系列改排 0.5.x 候选，0.4 主题拍板时确认 | 融合 PRD 头部能力参考停在 0.6.20/`7c9b37811`，未覆盖 queryData 与 workbench.ai.recommendations |
+
+### 15.2 豁免条件（T-C 动工前逐条核对）
+
+1. **只读定位**：schema 上画布只做「读元数据 → 画骨架/ER 草图」；DDL 执行、写库、Actual 计划仍是融合 PRD §2 的非目标，豁免不触及。
+2. **权限纪律照旧**：`host.schema:read` 过横切守则三处同步 + README compat 表安装期白名单警告（比照 0.3.1 `host.clipboard:read` 的记录方式）；`engines.host_api` 保持 `"1"`。
+3. **文案随功能走**：manifest description / store releaseNotes 中恢复 schema 相关表述的时机是承载该功能的版本，不提前单改描述（R12-3 的原始诉求——描述与实际能力一致——在豁免后依然成立）。
+4. **载荷先行**：`contextMenu/table` 的 context 载荷形状文档未写全，动手前先读宿主源码钉死（roadmap T-C 前置保留）。
+
+### 15.3 与开放决策清单的关系
+
+§14 的 1、2 两项由 15.1 关闭；3（asset transport）此前已按「chunked JSON」落地并在 roadmap ⛔ 表里封死 framed binary 重提路径；4（export fallback）已由 0.3.0 的 sidecar 优先 + `host.saveFile` 链路终结。本节之后 §14 不再有未决项。

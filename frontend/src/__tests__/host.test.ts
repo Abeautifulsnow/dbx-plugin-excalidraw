@@ -9,12 +9,14 @@ describe("readResultSet", () => {
     const context = readResultSet({
       connectionId: "conn-1",
       database: "analytics",
+      schema: "app",
       sql: "select * from orders",
       result: { columns: ["id", "total"], rows: [[1, "9.99"]], truncated: true },
     });
     expect(context).toEqual({
       connectionId: "conn-1",
       database: "analytics",
+      schema: "app",
       sql: "select * from orders",
       result: { columns: ["id", "total"], rows: [[1, "9.99"]], truncated: true },
     });
@@ -26,12 +28,15 @@ describe("readResultSet", () => {
     expect(readResultSet({})).toEqual({
       connectionId: "",
       database: "",
+      schema: "",
       sql: "",
       result: { columns: [], rows: [], truncated: false },
     });
     expect(readResultSet({ result: null }).result.rows).toEqual([]);
     expect(readResultSet({ result: { columns: "id", rows: "not-rows" } }).result.columns).toEqual([]);
     expect(readResultSet({ sql: 42 }).sql).toBe("");
+    // Older hosts never send a schema; absence degrades to "" like the rest.
+    expect(readResultSet({ connectionId: "conn-1" }).schema).toBe("");
     // `truncated` is only true when the host said so explicitly.
     expect(readResultSet({ result: { truncated: "yes" } }).result.truncated).toBe(false);
   });

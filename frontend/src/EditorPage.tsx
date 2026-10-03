@@ -3,6 +3,7 @@ import { getSceneVersion } from "@excalidraw/excalidraw";
 import type { AppState, BinaryFileData, ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { api } from "./api";
+import { errorDetail, withCause } from "./errors";
 import { exportScene, saveSceneViaHost, type ExportKind } from "./export";
 import { ExcalidrawEditor } from "./ExcalidrawEditor";
 import {
@@ -102,7 +103,7 @@ function useExportMenuActions(params: {
       reportReceipt({ message: format(template, path), inPluginFolder: true });
     } catch (error) {
       console.error("[editor] export failed", error);
-      report(t.exportFailed);
+      report(withCause(t.exportFailed, error));
     }
   };
 
@@ -117,7 +118,7 @@ function useExportMenuActions(params: {
       reportInfo(t.copySceneDone);
     } catch (error) {
       console.error("[editor] scene copy failed", error);
-      report(t.copySceneFailed);
+      report(withCause(t.copySceneFailed, error));
     }
   };
 
@@ -127,7 +128,7 @@ function useExportMenuActions(params: {
       await revealInFileManager(target);
     } catch (error) {
       console.error("[editor] could not open the DBX file manager", error);
-      report(t.revealFailed);
+      report(withCause(t.revealFailed, error));
     }
   };
 
@@ -139,6 +140,11 @@ function useExportMenuActions(params: {
 }
 
 const AUTOSAVE_DELAY_MS = 1000;
+
+/** Info toasts confirm one fact; error toasts carry the underlying cause (see
+ *  errors.ts) and need reading time for a driver message on top of the copy. */
+const INFO_TOAST_MS = 4000;
+const ERROR_TOAST_MS = 7000;
 
 /** Transient toast: failures in the error variant, confirmations in info. */
 type Toast = { variant: "info" | "error"; message: string };
@@ -161,6 +167,11 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
   const [meta, setMeta] = useState<DocumentMeta | null>(null);
   const [initialData, setInitialData] = useState<ExcalidrawInitialDataState | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
+  // Underlying error behind the last failed save/load, kept for the status
+  // chip's tooltip and the failure screen; the copy alone ("保存失败") gives
+  // the user nothing to report.
+  const [saveErrorDetail, setSaveErrorDetail] = useState<string | null>(null);
+  const [loadFailure, setLoadFailure] = useState<string | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -199,6 +210,7 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
           return;
         }
         console.error("[editor] load failed", error);
+        setLoadFailure(errorDetail(error));
         setPhase(error instanceof Error && error.name === "ApiError" && (error as { code?: string }).code === "DOCUMENT_CORRUPT" ? "corrupt" : "error");
       }
     })();
@@ -254,6 +266,7 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
         rerunRef.current || (latestRef.current ? getSceneVersion(latestRef.current.elements) !== savedVersion : false);
       dirtyRef.current = pending;
       setSaveStatus(pending ? "dirty" : "saved");
+      setSaveErrorDetail(null);
       if (!rerunRef.current) {
         setMeta((previous) => (previous ? { ...previous, updatedAt: updated.updatedAt } : previous));
       }
@@ -263,6 +276,7 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
       console.error("[editor] save failed", error);
       dirtyRef.current = true;
       setSaveStatus("error");
+      setSaveErrorDetail(errorDetail(error) || null);
     } finally {
       inFlightRef.current = false;
       if (rerunRef.current) {
@@ -331,7 +345,7 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
     if (!toast) {
       return;
     }
-    const handle = setTimeout(() => setToast(null), 4000);
+    const handle = setTimeout(() => setToast(null), toast.variant === "error" ? ERROR_TOAST_MS : INFO_TOAST_MS);
     return () => clearTimeout(handle);
   }, [toast]);
 
@@ -352,7 +366,7 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
     } catch (error) {
       console.error("[editor] rename failed", error);
       setTitleDraft(meta.name);
-      setToast({ variant: "error", message: t.renameFailed });
+      setToast({ variant: "error", message: withCause(t.renameFailed, error) });
     }
   };
 
@@ -375,8 +389,11 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
   const canReadClipboard = capabilities?.clipboardRead === true;
   const canReadClipboardImage = capabilities?.clipboardImageRead === true;
 
+  // INVALID_SCENE is self-explanatory (the copy says what the clipboard held
+  // instead of a scene); every other failure carries its underlying cause —
+  // the ClipboardError's own message plus the raw host error it wrapped.
   const pasteFailureMessage = (error: unknown): string =>
-    error instanceof ClipboardError && error.code === "INVALID_SCENE" ? t.pasteSceneInvalid : t.pasteFailed;
+    error instanceof ClipboardError && error.code === "INVALID_SCENE" ? t.pasteSceneInvalid : withCause(t.pasteFailed, error);
 
   const pasteSceneFromClipboard = async () => {
     setPasteOpen(false);
@@ -435,6 +452,7 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
         <div className="notice">
           <h2>{phase === "corrupt" ? t.corruptTitle : t.openFailed}</h2>
           <p>{phase === "corrupt" ? t.corruptBody : t.openFailedBody}</p>
+          {phase === "error" && loadFailure && <pre className="notice__detail">{loadFailure}</pre>}
           <button type="button" className="btn" onClick={onBack}>
             {t.back}
           </button>
@@ -469,7 +487,13 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
           aria-label={t.renameTitle}
           spellCheck={false}
         />
-        <span className={`save-status save-status--${saveStatus}`} role="status">
+        <span
+          className={`save-status save-status--${saveStatus}`}
+          role="status"
+          // Gated on the error state: the detail describes the last failed
+          // save, which a later "dirty"/"saved" chip must not present as its own.
+          title={saveStatus === "error" ? (saveErrorDetail ?? undefined) : undefined}
+        >
           {statusText}
         </span>
         {canReadClipboard && (
