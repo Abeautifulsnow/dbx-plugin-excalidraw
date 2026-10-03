@@ -21,11 +21,13 @@ description: 发布 Excalidraw Studio（DBX 插件 io.dbx.excalidraw）新版本
 4. 同步器只看**最新一个**非 draft、非 prerelease Release 的 `release-candidates.json`
    （回看最近 30 个）；Workflow 失败时静默跳过——发版后必须确认 Workflow success 且资产
    **恰好 6 个**。
-5. 本机直连 github.com 不通：git/curl/API 一律走本地代理 `http://127.0.0.1:7890`
-   （Clash Verge 混合端口）。git 用一次性参数 `git -c http.proxy=...`，不改仓库配置；
-   **任何联网 git 命令都要带**（`fetch`/`ls-remote`/`push` 都是，裸 `git fetch` 会
-   直接 `Connection was aborted`）；`scripts/release.mjs` 内置了代理兜底
-   （`release.mjs:25,56`）。
+5. 本机直连 github.com 不通：git/curl/API 一律走本地代理（Clash Verge 混合端口），
+   **端口按机器区分**：Mac（darwin）是 `http://127.0.0.1:7890`，Windows（Git Bash/Schannel
+   环境）是 `http://127.0.0.1:7897`——以下示例统一写 Mac 的 7890，**Windows 机器上把 7890
+   全部替换为 7897**；拿不准时以系统代理设置为准（macOS `scutil --proxy`，Windows 看 Clash
+   界面）。git 用一次性参数 `git -c http.proxy=...`，不改仓库配置；**任何联网 git 命令都要带**
+   （`fetch`/`ls-remote`/`push` 都是，裸 `git fetch` 会直接 `Connection was aborted`）；
+   `scripts/release.mjs` 内置了代理兜底（`release.mjs:25,56`）。
    **开工前先做代理健康检查**（第 2 步第 0 条）：代理端口在监听 ≠ 能用。失败时报
    `schannel: failed to receive handshake` / `SSL_ERROR_SYSCALL`，说明代理上游断了
    ——curl、git、python 三种方式都会同样报错，是环境问题不是命令写错，先去修代理
@@ -67,6 +69,7 @@ git -c http.proxy=http://127.0.0.1:7890 ls-remote --tags origin refs/tags/v0.2.2
 
 ```bash
 # 0. 代理健康检查（发版全程依赖它；端口在监听不代表能用）
+#    端口按机器：Mac = 7890（下文即此），Windows = 7897（替换下面命令里的端口）
 curl -x http://127.0.0.1:7890 -sS -m 20 -o /dev/null https://api.github.com/rate_limit \
   && echo "proxy OK" || echo "proxy FAILED"
 #    期望 `proxy OK`（exit 0）。失败时常伴随 `schannel: failed to receive handshake`
@@ -164,7 +167,7 @@ release-candidates.json
 | --- | --- |
 | curl/git 报 `schannel: failed to receive handshake` 或 `OpenSSL SSL_connect: SSL_ERROR_SYSCALL` | 代理上游断了（端口仍在监听也会这样），先修代理再继续；不是命令或凭据问题 |
 | 代理健康检查打印 `http=000` 且报 `curl: (43) ... bad argument` | **不是**代理问题：是本机 mingw curl 8.8.0 + Schannel 对 https 加 `-w` 的 bug，代理正常时也复现。改用不带 `-w` 的检查（第 2 步第 0 条） |
-| 裸 `git fetch` / `git push` 报 `Recv failure: Connection was aborted` | 该命令没带代理。用 `git -c http.proxy=http://127.0.0.1:7890 ...` |
+| 裸 `git fetch` / `git push` 报 `Recv failure: Connection was aborted` | 该命令没带代理。用 `git -c http.proxy=http://127.0.0.1:<端口> ...`（Mac 7890 / Win 7897，见铁律 5） |
 | `release.mjs` 报 `GitHub API call failed` | 同上——它先直连再走代理，两条都不通时才会这样（`release.mjs:54-75`） |
 | `release.mjs` 报 worktree dirty / 不在 main / 不同步 | 先 commit 并 push（第 3 步）；未跟踪文件也算 dirty |
 | `release.mjs` 报 tag 已存在 | 该版本已发布过；**不可复用**，递增 `manifest.json` 版本重走全流程 |
