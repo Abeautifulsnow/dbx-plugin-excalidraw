@@ -21,7 +21,7 @@ description: 发布 Excalidraw Studio（DBX 插件 io.dbx.excalidraw）新版本
 4. 同步器只看**最新一个**非 draft、非 prerelease Release 的 `release-candidates.json`
    （回看最近 30 个）；Workflow 失败时静默跳过——发版后必须确认 Workflow success 且资产
    **恰好 6 个**。
-5. 本机直连 github.com 不通：git/curl/API 一律走本地代理 `http://127.0.0.1:7897`
+5. 本机直连 github.com 不通：git/curl/API 一律走本地代理 `http://127.0.0.1:7890`
    （Clash Verge 混合端口）。git 用一次性参数 `git -c http.proxy=...`，不改仓库配置；
    **任何联网 git 命令都要带**（`fetch`/`ls-remote`/`push` 都是，裸 `git fetch` 会
    直接 `Connection was aborted`）；`scripts/release.mjs` 内置了代理兜底
@@ -43,7 +43,7 @@ description: 发布 Excalidraw Studio（DBX 插件 io.dbx.excalidraw）新版本
 
 ```bash
 git tag -l v0.2.2
-git -c http.proxy=http://127.0.0.1:7897 ls-remote --tags origin refs/tags/v0.2.2
+git -c http.proxy=http://127.0.0.1:7890 ls-remote --tags origin refs/tags/v0.2.2
 ```
 
 然后把这个版本号同步到下表各处：
@@ -67,7 +67,7 @@ git -c http.proxy=http://127.0.0.1:7897 ls-remote --tags origin refs/tags/v0.2.2
 
 ```bash
 # 0. 代理健康检查（发版全程依赖它；端口在监听不代表能用）
-curl -x http://127.0.0.1:7897 -sS -m 20 -o /dev/null https://api.github.com/rate_limit \
+curl -x http://127.0.0.1:7890 -sS -m 20 -o /dev/null https://api.github.com/rate_limit \
   && echo "proxy OK" || echo "proxy FAILED"
 #    期望 `proxy OK`（exit 0）。失败时常伴随 `schannel: failed to receive handshake`
 #    / `SSL_ERROR_SYSCALL` —— 那是代理上游断了：先修代理（换节点/更新订阅）再继续，
@@ -107,7 +107,7 @@ node scripts/sidecar-smoke.mjs
 ```bash
 git add manifest.json backend/main.go frontend/package.json scripts/sidecar-smoke.mjs .dbx-store.json
 git commit -m "chore(release): bump version to <新版本>"
-git -c http.proxy=http://127.0.0.1:7897 push origin main
+git -c http.proxy=http://127.0.0.1:7890 push origin main
 ```
 
 `release.mjs` 要求工作树干净、当前在 `main`、且与 origin **完全同步**（`release.mjs:84-99`），
@@ -128,7 +128,7 @@ remote 的 tag 都不存在 → 组装 notes（`.dbx-store.json` 的 `releaseNot
 `host=github.com`）取 `password=` 作 token，`POST https://api.github.com/repos/<owner>/<repo>/releases`，
 头用 `Authorization: Bearer <token>`（fine-grained PAT 用 `token` 前缀对部分端点会 404），
 body 含 `tag_name` / `target_commitish: main` / `name` / `body` / `draft: false` / `prerelease: false`；
-curl 加 `-x http://127.0.0.1:7897`。**`<owner>/<repo>` 从 `git remote get-url origin` 解析，不要
+curl 加 `-x http://127.0.0.1:7890`。**`<owner>/<repo>` 从 `git remote get-url origin` 解析，不要
 手打**——`release.mjs:138` 自己硬编码了 `Abeautifulsnow`，fork 到别的 owner 时必须改那一行。
 已知坑：owner 拼错返回的是 404（不是 403），先核对拼写再怀疑权限。
 
@@ -138,10 +138,10 @@ curl 加 `-x http://127.0.0.1:7897`。**`<owner>/<repo>` 从 `git remote get-url
 
 ```bash
 # a) 工作流状态：在 workflow_runs[] 里找 name == "Release DBX plugin" 且 head_branch == v<版本> 的那条
-curl -x http://127.0.0.1:7897 -sS "https://api.github.com/repos/<owner>/<repo>/actions/runs?branch=v<版本>"
+curl -x http://127.0.0.1:7890 -sS "https://api.github.com/repos/<owner>/<repo>/actions/runs?branch=v<版本>"
 
 # b) 资产清单：.assets[].name
-curl -x http://127.0.0.1:7897 -sS "https://api.github.com/repos/<owner>/<repo>/releases/tags/v<版本>"
+curl -x http://127.0.0.1:7890 -sS "https://api.github.com/repos/<owner>/<repo>/releases/tags/v<版本>"
 ```
 
 要求 `status == completed` 且 `conclusion == success`（历史耗时约 2–5 分钟），并且 `.assets[]`
@@ -164,7 +164,7 @@ release-candidates.json
 | --- | --- |
 | curl/git 报 `schannel: failed to receive handshake` 或 `OpenSSL SSL_connect: SSL_ERROR_SYSCALL` | 代理上游断了（端口仍在监听也会这样），先修代理再继续；不是命令或凭据问题 |
 | 代理健康检查打印 `http=000` 且报 `curl: (43) ... bad argument` | **不是**代理问题：是本机 mingw curl 8.8.0 + Schannel 对 https 加 `-w` 的 bug，代理正常时也复现。改用不带 `-w` 的检查（第 2 步第 0 条） |
-| 裸 `git fetch` / `git push` 报 `Recv failure: Connection was aborted` | 该命令没带代理。用 `git -c http.proxy=http://127.0.0.1:7897 ...` |
+| 裸 `git fetch` / `git push` 报 `Recv failure: Connection was aborted` | 该命令没带代理。用 `git -c http.proxy=http://127.0.0.1:7890 ...` |
 | `release.mjs` 报 `GitHub API call failed` | 同上——它先直连再走代理，两条都不通时才会这样（`release.mjs:54-75`） |
 | `release.mjs` 报 worktree dirty / 不在 main / 不同步 | 先 commit 并 push（第 3 步）；未跟踪文件也算 dirty |
 | `release.mjs` 报 tag 已存在 | 该版本已发布过；**不可复用**，递增 `manifest.json` 版本重走全流程 |
