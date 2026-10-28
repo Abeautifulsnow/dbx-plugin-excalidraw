@@ -22,6 +22,18 @@ leaving DBX — no cloud service involved.
 - **AI plan review** — an *Ask AI* action hands the parsed plan to DBX's
   built-in AI panel as a one-way snapshot (`host.ai`); plan warnings arrive on
   the canvas as a sticky note.
+- **AI recommendation prompts** — the plugin seeds the AI panel's suggestion
+  chips with prompts worth clicking: result interpretation, visualization
+  ideas and SQL review while a result set is on offer, plan interpretation
+  once a plan is parsed or opened; plain canvases clear the set. Each view
+  re-asserts its stance whenever its tab comes back to the front, so the
+  panel always reflects the tab you are looking at. Runtime only
+  (`ai.setRecommendations`, gated on the init frame's `aiRecommendations` key
+  — `host.ai` has been declared since 0.3.0). The declarative manifest half
+  was evaluated and rejected: `workbench.ai.recommendations` postdates this
+  manifest's `engines.dbx` floor, and the workbench contribution rejects
+  unknown fields, so declaring it would make the plugin uninstallable on
+  hosts the plugin otherwise supports.
 - **Filesystem provider** — an `excalidraw:` scheme exposes the document store
   as browsable `.excalidraw` files, so DBX can open diagrams without going
   through the plugin UI; see [Filesystem provider](#filesystem-provider).
@@ -159,6 +171,7 @@ time. Two worth knowing about:
 | Result canvas (`result-view`) | Needs a DBX build with `4f3be8ccf fix(plugin): resolve result-view by UI contribution` (2026-09-20) — see [Result canvas](#result-canvas) |
 | Plan canvas (plan API) | Needs the Host API 1.2 plan methods; the entry is gated on `capabilities.planApi` — see [Plan canvas](#plan-canvas) |
 | Ask AI (plan review) | Additionally needs a host with the built-in AI panel; gated on `capabilities.ai` and declared as `host.ai` |
+| AI recommendation prompts | Additionally needs an init frame advertising `aiRecommendations` (Host API 1.4-era hosts and newer); older hosts simply show no plugin chips. No new permission — rides the `host.ai` declared since 0.3.0 |
 | *Use the system save dialog* | Needs a build carrying `host.saveFile`; without it the export falls back to the plugin folder and the toast says so |
 | Paste from clipboard | Needs a desktop host advertising `clipboardRead` / `clipboardImageRead` (Host API 1.3 bridge); the paste menu hides when the init frame lacks the capability. *Copy scene JSON* degrades to the older `host.copy` and is available everywhere. The declared `host.clipboard:read` carries the same install-time caveat as `host.plans:read`: a host whose permission whitelist predates it reports the whole plugin incompatible |
 | Tab titles (`setTitle`) | Needs an init frame advertising `workbenchTitle` (hosts from 2026-10-23); older hosts keep the static contribution label. No new permission — the runtime check rides the already-declared `host.workbench` |

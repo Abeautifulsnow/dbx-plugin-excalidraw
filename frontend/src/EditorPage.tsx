@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { getSceneVersion } from "@excalidraw/excalidraw";
 import type { AppState, BinaryFileData, ExcalidrawImperativeAPI, ExcalidrawInitialDataState } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
@@ -19,6 +19,8 @@ import { revealInFileManager, type RevealTarget } from "./fileManager";
 import { loadDocument, persistScene } from "./persistence";
 import type { DocumentMeta } from "./types";
 import { editorTabTitle } from "./tabTitle";
+import { isPlanDocumentName, planRecommendations } from "./aiRecommendations";
+import { useAiRecommendations } from "./useAiRecommendations";
 import { useTabTitle } from "./useTabTitle";
 import { excalidrawLangCode, format, type Strings } from "./i18n";
 
@@ -357,6 +359,17 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
   // rename draft — an Escape'd draft must not rename the tab.
   const hasUnsaved = saveStatus !== "saved";
   useTabTitle(meta ? editorTabTitle(meta.name, hasUnsaved) : null);
+
+  // A plan document keeps the AI panel seeded with plan-interpretation chips
+  // (opening one from home sets them here, so the path works without the
+  // result view); every other canvas is plain and clears whatever another
+  // view left behind. Undefined while the document is still loading: this
+  // view has nothing to say yet, so the hook stays out of the way.
+  const viewRecommendations = useMemo(
+    () => (meta ? (isPlanDocumentName(meta.name, t) ? planRecommendations(t) : null) : undefined),
+    [meta, t],
+  );
+  useAiRecommendations(viewRecommendations);
 
   const commitTitle = async () => {
     if (!meta) {

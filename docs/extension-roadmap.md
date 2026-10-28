@@ -2,7 +2,7 @@
 
 > 本文件是**活的**任务清单：对照 `docs/reference/dbx-plugin-capabilities.md`（同步至 dbx main@adaaec5a3，Host API 1.4.0）维护，记录已实现、待实现、观望与已否决的拓展项。
 > 历史依据见 `out/capability-extension-report.md`（2026-09-21 时点合成报告，其中结论部分已被后续版本落地或证伪，以本文件为准）。
-> 最后更新：0.3.1 已发布（2026-09-28，tag v0.3.1）；0.3.2 已发布（2026-10-03）；2026-10-03 桥限计量审计与非目标重裁（守则 §3.7/§3.8、`PRD_V1_REVISIONS.md` §15）；0.4.0 开工——标签页标题跟随已落地，capabilities 类型已对齐 2026-10-23 宿主帧（dbx main@590a311b5）。
+> 最后更新：0.3.1 已发布（2026-09-28，tag v0.3.1）；0.3.2 已发布（2026-10-03）；2026-10-03 桥限计量审计与非目标重裁（守则 §3.7/§3.8、`PRD_V1_REVISIONS.md` §15）；0.4.0 开工——标签页标题跟随与 AI 推荐提示词（T-B）已落地，capabilities 类型已对齐 2026-10-23 宿主帧（dbx main@590a311b5）。
 
 ## 状态图例
 
@@ -57,6 +57,12 @@
   - 横切守则第一步同步落地：`types.ts` capabilities 补齐宿主 17 键 + `fileTransfer` 子对象，声明 `contributionId` getter 与 `setTitle`/`getTitle`
   - 附带：`primeLaunchFromBridge` 错过 init 帧时优先读桥上的 `contributionId`，只有旧宿主才退回载荷形状推断（`dbx-plugin-init` 恢复日志随之改口径）
   - dev-host 已模拟 `host.setTitle`/`getTitle`（`server.mjs`），本项可本地端到端验证，不依赖真机
+- [x] **AI 推荐提示词**（T-B，纯运行时 `ai.setRecommendations`/`clearRecommendations`）
+  - ⛔ 声明式半边（`workbench.ai.recommendations`）实现后**撤回，不要重提**：`PluginWorkbenchContribution` 带 `#[serde(deny_unknown_fields)]`（宿主 manifest.rs），且该字段 2026-09-27（e6edd02bb）才加入——之前的宿主对携带 `ai` 的整份 manifest 解析失败，engines 区间 0.5.68~0.6.26 **装不上**；比 result-view 的"标签加载失败"更重（安装期硬拒 vs 运行时降级）。恢复条件：`engines.dbx` 下限抬过字段引入版本时重新评估（与 ⛔ 表 mcp 行同类裁定）
+  - 运行时：`aiRecommendations.ts` + `useAiRecommendations` hook（门控 `capabilities.aiRecommendations` + `host.ai` 已声明，**零新权限、零 manifest 变更**）；载荷为宿主信封 `{ context, items≤5 }`（对照宿主源码 `requirePluginAiRecommendationUpdate` 钉死——裸数组被拒，context 传本标签上下文供占位符插值）；同串去重 + 拒绝弃记忆重试；首次 clear 也发（新开普通画布要能清掉其他标签的 chips）；宿主标签切换为 v-show 保活不卸载（App.vue），hook 在每次 visibilitychange（iframe 隐藏/恢复）时 **force 重申**本视图语义——"当前可见视图决定面板内容"，force 绕过两级去重备忘
+  - 视图接线：结果视图挂载设结果解读/可视化/SQL 审查 3 条（zh/en 双语），计划解析成功（上画布与 Ask AI 两路径）换计划解读/优化建议 2 条；EditorPage 对计划文档（命名约定 `<query> - plan` 或本地化标题）设计划推荐、其他文档清空；HomePage 挂载清空
+  - dev-host 已完整模拟 `host.ai.*` 三方法（参数校验与生产桥同构），本地可验证；宿主源码已本地核对（dbx 仓 pluginHostBridge.ts / manifest.rs）
+  - 真机待验：① 推荐条点击后 AI 会话的上下文来源（宿主侧行为）；② 多标签覆盖次序已按 visibility 重播种实现，真机确认 iframe display:none 翻转是否如预期触发 visibilitychange（宿主 App.vue 为 v-show 保活，理论成立）
 
 ---
 
@@ -68,9 +74,6 @@
   - 做什么：`Sketch on canvas` 在 `capabilities.dataApi` 且用户授权后，用 `host.data:read` 重查完整结果集铺画布，消除 500 行快照截断；未授权/旧宿主走现路径零破坏；进阶：数据驱动图表（柱状/趋势）。
   - 前置：新权限 `host.data:read` → 触发权限三处同步 + catalog 相等门；逐连接授权对话框（用户可见同意面）；真机 ≥0.6.26。
   - 验收要点：`PLUGIN_DATA_ACCESS_NOT_GRANTED` 的降级路径；并发 ≤4、结果 ≤8 MiB 的失败面；SQL 只读分类器拒绝时的文案。
-- [ ] **T-B AI 推荐提示词**（`workbench.ai.recommendations` + `ai.setRecommendations`）
-  - 做什么：声明至多 5 条带 `{{sql}}`/`{{result.*}}` 插值的推荐；结果视图打开时推荐"解读 SQL 并建议可视化"，计划上画布后动态换成计划解读，普通画布清空。
-  - 前置：声明式部分零权限；运行时替换走 `host.ai`（已声明）；占位符插值失败整条丢弃的宿主行为需真机确认。
 
 ### P2 —— 需要决策或先做实验
 
@@ -128,4 +131,4 @@
 | 0.3.0 | 计划上画布 + Ask AI + 另存为 + 深链 + prefs | 已发布 |
 | 0.3.1 | 剪贴板整合（复制 JSON / 粘贴场景 / 粘贴截图） | 已发布（v0.3.1）；真机清单待过 |
 | 0.3.2 | 结果视图 schema 透传（惰性，待宿主）+ 错误透传推广（withCause）+ 复制预检信封计量 | 已发布（v0.3.2，2026-10-03） |
-| 0.4.x | 标签页标题跟随（已落地，见 §0）；T-A queryData 全量重查；T-B AI 推荐提示词 | 进行中 |
+| 0.4.x | 标签页标题跟随、AI 推荐提示词 T-B（均已落地，见 §0）；T-A queryData 全量重查 | 进行中 |

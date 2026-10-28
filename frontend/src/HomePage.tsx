@@ -3,6 +3,7 @@ import { api, ApiError } from "./api";
 import { withCause } from "./errors";
 import { persistImportedScene } from "./persistence";
 import { setPref, usePrefs } from "./prefs";
+import { useAiRecommendations } from "./useAiRecommendations";
 import type { DocumentMeta } from "./types";
 import { format, type Lang, type Strings } from "./i18n";
 
@@ -87,6 +88,11 @@ export function HomePage({ lang, t, onOpen }: HomePageProps) {
   useEffect(() => {
     void refresh();
   }, []);
+
+  // The library is a plain canvas: nothing for the AI panel to talk about, so
+  // clear whatever chips another view (a result tab) left behind — and keep
+  // clearing whenever this tab comes back to the front.
+  useAiRecommendations(null);
 
   useEffect(() => {
     if (!toast) {

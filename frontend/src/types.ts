@@ -78,6 +78,28 @@ export interface PlanResult {
   warnings: string[];
 }
 
+/** One suggestion chip for the built-in AI panel: what the user clicks
+ *  (label) and the prompt that clicking sends (label <=200, prompt <=32000,
+ *  at most 5 per set). */
+export interface AiRecommendationPayload {
+  id: string;
+  label: string;
+  prompt: string;
+  /** Display position within the set. */
+  order?: number;
+}
+
+/** What host.ai.setRecommendations takes (verified against the host bridge's
+ *  requirePluginAiRecommendationUpdate): the tab context, snapshotted by the
+ *  host for placeholder interpolation, plus the chip list. A bare array is
+ *  rejected. */
+export interface AiRecommendationUpdate {
+  /** Plain object; the tab context this instance was launched with. */
+  context: Record<string, unknown>;
+  /** At most 5 chips. */
+  items: AiRecommendationPayload[];
+}
+
 /** Payload of `clipboard.readImage`; the host only ever returns PNG. */
 export interface ClipboardImagePayload {
   contentType: "image/png";
@@ -175,7 +197,14 @@ export interface DbxPluginBridge {
   /** Built-in AI panel conversation seeded with a one-way plugin snapshot
    *  (title <=200 chars, prompt <=32000, context plain object <=2 MiB); the
    *  plugin never sees model output back. Available when capabilities.ai. */
-  ai?: { openConversation(options: AiConversationOptions): Promise<void> };
+  ai?: {
+    openConversation(options: AiConversationOptions): Promise<void>;
+    /** Replaces the plugin's suggestion chips in the built-in AI panel with
+     *  a new set. Needs host.ai; gated by capabilities.aiRecommendations. */
+    setRecommendations?(update: AiRecommendationUpdate): Promise<unknown>;
+    /** Removes the plugin's suggestion chips from the built-in AI panel. */
+    clearRecommendations?(): Promise<unknown>;
+  };
   /** Persist bytes through the host's native save dialog. */
   saveFile?(options: { fileName?: string; contentType?: string }, data: Uint8Array): Promise<{ path: string } | null>;
   copy?(text: string): Promise<void>;

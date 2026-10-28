@@ -92,6 +92,16 @@ export interface Strings {
   pasteImageDone: string;
   pasteSceneInvalid: string;
   pasteFailed: string;
+  recInterpretResultLabel: string;
+  recInterpretResultPrompt: string;
+  recVisualizeLabel: string;
+  recVisualizePrompt: string;
+  recOptimizeSqlLabel: string;
+  recOptimizeSqlPrompt: string;
+  recInterpretPlanLabel: string;
+  recInterpretPlanPrompt: string;
+  recPlanSuggestionsLabel: string;
+  recPlanSuggestionsPrompt: string;
 }
 
 const en: Strings = {
@@ -186,6 +196,21 @@ const en: Strings = {
   pasteImageDone: "Image added to the canvas.",
   pasteSceneInvalid: "The clipboard does not hold a valid Excalidraw scene.",
   pasteFailed: "Could not read the clipboard.",
+  recInterpretResultLabel: "Interpret this result set",
+  recInterpretResultPrompt:
+    "Interpret the result set on this canvas: what the data shows, notable outliers or trends, and which rows matter most. Reference actual values where useful.",
+  recVisualizeLabel: "Suggest a visualization",
+  recVisualizePrompt:
+    "Based on this result set's columns and value shapes, recommend the best chart type for the data and explain why, so it can be sketched on the canvas.",
+  recOptimizeSqlLabel: "Review the SQL",
+  recOptimizeSqlPrompt:
+    "Review the SQL behind this result set for correctness and performance pitfalls, and suggest concrete improvements such as indexes or rewrites.",
+  recInterpretPlanLabel: "Interpret this execution plan",
+  recInterpretPlanPrompt:
+    "Interpret the execution plan on this canvas: what each operator does, where the cost concentrates, and whether row estimates look suspicious. Reference node names.",
+  recPlanSuggestionsLabel: "Plan improvement suggestions",
+  recPlanSuggestionsPrompt:
+    "Based on this execution plan, suggest concrete changes (indexes, query rewrites, settings) and name the node each change addresses.",
 };
 
 const zh: Strings = {
@@ -280,6 +305,21 @@ const zh: Strings = {
   pasteImageDone: "图片已添加到画布。",
   pasteSceneInvalid: "剪贴板里没有有效的 Excalidraw 场景。",
   pasteFailed: "无法读取剪贴板。",
+  recInterpretResultLabel: "解读这份结果集",
+  recInterpretResultPrompt:
+    "请解读画布上的这份结果集：数据说明了什么、有哪些明显的异常值或趋势、哪些行最值得关注。请尽量引用真实数值。",
+  recVisualizeLabel: "推荐可视化方式",
+  recVisualizePrompt:
+    "请根据这份结果集的列与取值形态，推荐最适合的图表类型并说明理由，方便我在画布上把它画出来。",
+  recOptimizeSqlLabel: "审查这段 SQL",
+  recOptimizeSqlPrompt:
+    "请审查这份结果集背后的 SQL，指出正确性与性能隐患，并给出具体改进建议（索引、改写、参数等）。",
+  recInterpretPlanLabel: "解读这份执行计划",
+  recInterpretPlanPrompt:
+    "请解读这张画布上的执行计划：每个算子在做什么、成本集中在哪里、行数估算是否可疑。请引用节点名。",
+  recPlanSuggestionsLabel: "计划优化建议",
+  recPlanSuggestionsPrompt:
+    "请基于这份执行计划给出具体可落地的改动建议（索引、改写、参数），并说明每条建议对应哪个节点。",
 };
 
 export const strings: Record<Lang, Strings> = { en, zh };

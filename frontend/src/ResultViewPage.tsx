@@ -12,6 +12,8 @@ import {
   type GridSceneResult,
 } from "./resultScene";
 import { buildPlanAiContext, buildPlanScene, parsePlan, type ParsedPlan } from "./plan";
+import { planRecommendations, resultRecommendations, setAiRecommendations } from "./aiRecommendations";
+import { useAiRecommendations } from "./useAiRecommendations";
 import { formatAll, type Strings } from "./i18n";
 import type { DocumentMeta, ResultSetContext } from "./types";
 
@@ -78,6 +80,18 @@ export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProp
     t,
     onOpen,
   });
+
+  // T-B: while this tab holds a result set, seed the AI panel's suggestion
+  // chips with result-interpretation prompts — they ride the same context the
+  // host already gave this tab. An empty tab is a plain canvas and clears
+  // instead, like every other view without data to talk about. The hook
+  // re-asserts the stance on every visibilitychange, since the host keeps
+  // this webview mounted behind display:none while another tab is front.
+  const viewRecommendations = useMemo(
+    () => (hasResult ? resultRecommendations(t) : null),
+    [hasResult, t],
+  );
+  useAiRecommendations(viewRecommendations);
 
   return (
     <div className="result-view">
@@ -224,6 +238,9 @@ function useResultViewActions(params: {
       if (!fetched) {
         return;
       }
+      // The plan is on its way to the canvas: pivot the AI panel's chips from
+      // result interpretation to plan interpretation before navigation.
+      setAiRecommendations(planRecommendations(t));
       const base = deriveName(sql);
       const name = base ? `${base} - plan` : t.planSceneTitle;
       let caption = sql.replace(/\s+/g, " ").trim();
@@ -266,6 +283,9 @@ function useResultViewActions(params: {
       if (!fetched) {
         return;
       }
+      // Same pivot as the canvas path: the snapshot going to the AI panel is a
+      // plan, so the chips should talk about plans.
+      setAiRecommendations(planRecommendations(t));
       const context = buildPlanAiContext(fetched.parsed, { dbType: fetched.dbType, sql, warnings: fetched.warnings });
       // The host caps the context in UTF-8 bytes, not UTF-16 string lengths;
       // measure the same way or CJK-heavy plans slip past this check.
