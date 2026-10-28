@@ -2,7 +2,7 @@
 
 > 本文件是**活的**任务清单：对照 `docs/reference/dbx-plugin-capabilities.md`（同步至 dbx main@adaaec5a3，Host API 1.4.0）维护，记录已实现、待实现、观望与已否决的拓展项。
 > 历史依据见 `out/capability-extension-report.md`（2026-09-21 时点合成报告，其中结论部分已被后续版本落地或证伪，以本文件为准）。
-> 最后更新：0.3.1 已发布（2026-09-28，tag v0.3.1）；2026-10-03 桥限计量审计与非目标重裁（守则 §3.7/§3.8、`PRD_V1_REVISIONS.md` §15）。
+> 最后更新：0.3.1 已发布（2026-09-28，tag v0.3.1）；0.3.2 已发布（2026-10-03）；2026-10-03 桥限计量审计与非目标重裁（守则 §3.7/§3.8、`PRD_V1_REVISIONS.md` §15）；0.4.0 开工——标签页标题跟随已落地，capabilities 类型已对齐 2026-10-23 宿主帧（dbx main@590a311b5）。
 
 ## 状态图例
 
@@ -45,6 +45,18 @@
 - [ ] 1 秒限速触发时表现为等待而非报错
 - [ ] 旧宿主 / web 宿主上粘贴菜单整体隐藏、复制条目仍可用
 - [ ] 撤销数据授权路径不受影响（本版未用 `host.data:read`，仅确认安装期白名单不报错）
+
+---
+
+### 0.4.0（开工，未发布）
+
+- [x] **标签页标题跟随**（`setTitle`/`getTitle`，2026-10-23 起 init 帧 `capabilities.workbenchTitle`）
+  - 编辑器标签 = 文档名，未保存时前缀 `• `（跟随已提交名，不跟随重命名草稿）；首页 = 产品名；结果视图标签 = `deriveName(sql)` 派生名，多个查询开出的标签可区分
+  - 门控 `capabilities.workbenchTitle`（缺键即无行为）；复用已声明 `host.workbench`，**零新权限**，无三处同步与白名单安装期问题
+  - `applyTabTitle` 去重（同串不发宿主）+ 120 字符截断 + 调用被拒后弃记忆重试（仅当无更新标题接管时复位）；App/EditorPage 标题接线收敛为 `useTabTitle` hook
+  - 横切守则第一步同步落地：`types.ts` capabilities 补齐宿主 17 键 + `fileTransfer` 子对象，声明 `contributionId` getter 与 `setTitle`/`getTitle`
+  - 附带：`primeLaunchFromBridge` 错过 init 帧时优先读桥上的 `contributionId`，只有旧宿主才退回载荷形状推断（`dbx-plugin-init` 恢复日志随之改口径）
+  - dev-host 已模拟 `host.setTitle`/`getTitle`（`server.mjs`），本项可本地端到端验证，不依赖真机
 
 ---
 
@@ -116,4 +128,4 @@
 | 0.3.0 | 计划上画布 + Ask AI + 另存为 + 深链 + prefs | 已发布 |
 | 0.3.1 | 剪贴板整合（复制 JSON / 粘贴场景 / 粘贴截图） | 已发布（v0.3.1）；真机清单待过 |
 | 0.3.2 | 结果视图 schema 透传（惰性，待宿主）+ 错误透传推广（withCause）+ 复制预检信封计量 | 已发布（v0.3.2，2026-10-03） |
-| 0.4.x（候选） | T-A queryData 全量重查；T-B AI 推荐提示词 | 未开工 |
+| 0.4.x | 标签页标题跟随（已落地，见 §0）；T-A queryData 全量重查；T-B AI 推荐提示词 | 进行中 |

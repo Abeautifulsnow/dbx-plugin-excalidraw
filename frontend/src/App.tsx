@@ -4,6 +4,8 @@ import { HomePage } from "./HomePage";
 import { ResultViewPage } from "./ResultViewPage";
 import { readResultSet } from "./host";
 import { strings } from "./i18n";
+import { deriveName } from "./resultScene";
+import { useTabTitle } from "./useTabTitle";
 import { useHostSession } from "./useHostSession";
 import type { DocumentMeta } from "./types";
 
@@ -71,6 +73,19 @@ export function App() {
   const current: View = view ?? (resultSet ? { name: "result" } : { name: "home" });
   const openDocument = (meta: DocumentMeta) => setView({ name: "editor", id: meta.id });
   const back = () => setView({ name: "home" });
+
+  // The host tab follows the view. The editor page titles it with the open
+  // document while it is mounted (the hook drops out there), so every
+  // non-editor view states its own name here and the switch back re-runs the
+  // hook. Result tabs use the query-derived name — the same string the created
+  // canvas is titled with — so two tabs opened from different queries are told
+  // apart in the tab bar. A host without the capability ignores all of this
+  // and keeps its static contribution label.
+  const viewTitle =
+    current.name === "result"
+      ? (resultSet ? deriveName(resultSet.sql) : "") || t.resultViewTitle
+      : t.productName;
+  useTabTitle(current.name === "editor" ? null : viewTitle);
 
   return (
     <ErrorBoundary>

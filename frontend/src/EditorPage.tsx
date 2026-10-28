@@ -18,6 +18,8 @@ import {
 import { revealInFileManager, type RevealTarget } from "./fileManager";
 import { loadDocument, persistScene } from "./persistence";
 import type { DocumentMeta } from "./types";
+import { editorTabTitle } from "./tabTitle";
+import { useTabTitle } from "./useTabTitle";
 import { excalidrawLangCode, format, type Strings } from "./i18n";
 
 type SaveStatus = "saved" | "dirty" | "saving" | "error";
@@ -348,6 +350,13 @@ export function EditorPage({ docId, theme, locale, t, onBack, onMetaChange }: Ed
     const handle = setTimeout(() => setToast(null), toast.variant === "error" ? ERROR_TOAST_MS : INFO_TOAST_MS);
     return () => clearTimeout(handle);
   }, [toast]);
+
+  // The host tab carries the document name, dotted while anything is unsaved
+  // (the in-header chip stays the authoritative save indicator; this is the
+  // at-a-glance copy in the tab bar). It follows the committed name, not the
+  // rename draft — an Escape'd draft must not rename the tab.
+  const hasUnsaved = saveStatus !== "saved";
+  useTabTitle(meta ? editorTabTitle(meta.name, hasUnsaved) : null);
 
   const commitTitle = async () => {
     if (!meta) {

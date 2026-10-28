@@ -43,6 +43,11 @@ leaving DBX — no cloud service involved.
   screenshot straight from the system clipboard onto the canvas; pasted images
   land in the same content-addressed asset store as any other picture. The
   paste entries hide themselves on hosts or web builds without the capability.
+- **Tab titles** — the host tab follows the view instead of one static label:
+  the open document's name in the editor (dotted while anything is unsaved),
+  and the query-derived name on result-view tabs, so two tabs opened from
+  different queries are told apart. A silent no-op on hosts whose init frame
+  does not advertise `workbenchTitle`.
 - **Preferences** — the result view's row count and the home screen's search
   term are remembered across sessions, stored by the sidecar next to the
   documents.
@@ -156,6 +161,7 @@ time. Two worth knowing about:
 | Ask AI (plan review) | Additionally needs a host with the built-in AI panel; gated on `capabilities.ai` and declared as `host.ai` |
 | *Use the system save dialog* | Needs a build carrying `host.saveFile`; without it the export falls back to the plugin folder and the toast says so |
 | Paste from clipboard | Needs a desktop host advertising `clipboardRead` / `clipboardImageRead` (Host API 1.3 bridge); the paste menu hides when the init frame lacks the capability. *Copy scene JSON* degrades to the older `host.copy` and is available everywhere. The declared `host.clipboard:read` carries the same install-time caveat as `host.plans:read`: a host whose permission whitelist predates it reports the whole plugin incompatible |
+| Tab titles (`setTitle`) | Needs an init frame advertising `workbenchTitle` (hosts from 2026-10-23); older hosts keep the static contribution label. No new permission — the runtime check rides the already-declared `host.workbench` |
 
 There is no host-side version gate to read: the `init`, `context` and `env`
 frames carry no version or feature flags, and `init.capabilities` is a

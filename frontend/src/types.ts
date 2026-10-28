@@ -113,6 +113,9 @@ export interface DbxPluginBridge {
   context: unknown;
   locale: string;
   theme: { appearance: "light" | "dark" };
+  /** Contribution id the host opened this instance for (2026-10-23 init frames
+   *  carry it and the bridge exposes it; older hosts leave it undefined). */
+  readonly contributionId?: string;
   invoke<T = unknown>(method: string, params?: unknown, options?: { timeoutMs?: number }): Promise<T>;
   notify(method: string, params?: unknown): unknown;
   // Documented as text; the dev host currently returns the raw envelope.
@@ -120,7 +123,16 @@ export interface DbxPluginBridge {
   readAssetUrl(path: string): Promise<string>;
   /** Opens the host's own file manager on one of this plugin's filesystem providers. */
   openFilesystem?(providerId: string, childContext?: FilesystemChildContext): Promise<void>;
-  /** Capability broadcast from the init frame; a missing key means unsupported. */
+  /** Renames this tab in the host UI: needs host.workbench at runtime and the
+   *  workbenchTitle capability from the init frame, which is what the tab-title
+   *  support gates on. */
+  setTitle?(title: string): Promise<void>;
+  /** Reads back the tab title the host currently shows. */
+  getTitle?(): Promise<string>;
+  /** Capability broadcast from the init frame; a missing key means unsupported.
+   *  Synced to the 2026-10-23 host init frames (17 keys plus the fileTransfer
+   *  sub-object); keys declared ahead of use are marked below — per the
+   *  roadmap's rule that this type is the first step of every new surface. */
   capabilities?: {
     downloadFile: boolean;
     planApi: boolean;
@@ -135,6 +147,26 @@ export interface DbxPluginBridge {
     clipboardRead?: boolean;
     clipboardImageRead?: boolean;
     mediaUrl?: boolean;
+    /** First advertised on 2026-10-23 init frames; absent on older hosts, and
+     *  absence means unsupported. */
+    aiModelDiscovery?: boolean;
+    aiCompletion?: boolean;
+    aiCompletionStream?: boolean;
+    /** Floating widget windows (desktop-only); web hosts never set it. */
+    floating?: boolean;
+    /** The host accepts setTitle/getTitle for this tab (runtime permission:
+     *  host.workbench, which this manifest already declares). */
+    workbenchTitle?: boolean;
+    /** Full connection enumeration via getConnections/connections.*. */
+    connectionsApi?: boolean;
+    /** Chunked file-transfer surfaces the host can provide. */
+    fileTransfer?: {
+      pick?: boolean;
+      beginSave?: boolean;
+      read?: boolean;
+      drop?: boolean;
+      folderExpansion?: boolean;
+    };
   };
   /** Plan API (Host API 1.2): read-only plan metadata for a stored connection. */
   getPlanCapabilities?(connectionId: string): Promise<PlanCapabilities>;

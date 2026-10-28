@@ -54,7 +54,7 @@ export function useHostSession(): HostSession {
         // The init message may have been dispatched before this bundle ran; the
         // bridge caches the context it resolved `ready` with, so pull it back.
         if (primeLaunchFromBridge()) {
-          console.warn("[app] dbx-plugin-init was missed; surface inferred from the host context");
+          console.warn("[app] dbx-plugin-init was missed; launch recovered from the bridge cache");
         }
         refresh();
         void ensureFonts();

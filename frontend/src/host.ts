@@ -69,9 +69,10 @@ export function installHostListeners(): void {
 /**
  * Recovers the launch when the init message was dispatched before this module
  * was evaluated. The bridge caches the context it resolved `ready` with, so
- * reading it back is authoritative for the payload; the contribution id is not
- * recoverable, and the surface is therefore inferred — a result-view payload is
- * the only one carrying a `result` object.
+ * reading it back is authoritative for the payload. Hosts that expose the
+ * contribution id on the bridge give back the surface exactly; older ones leave
+ * it undefined and the surface is inferred — a result-view payload is the only
+ * one carrying a `result` object.
  *
  * Returns true when this call is what established the launch, so the caller can
  * log the degraded path.
@@ -84,9 +85,15 @@ export function primeLaunchFromBridge(): boolean {
   if (Object.keys(context).length === 0) {
     return false;
   }
+  const contributionId = window.dbxPlugin?.contributionId;
   publish({
-    surface: context.result ? "result-view" : "workbench",
-    contributionId: null,
+    surface:
+      typeof contributionId === "string" && contributionId
+        ? surfaceOf(contributionId)
+        : context.result
+          ? "result-view"
+          : "workbench",
+    contributionId: typeof contributionId === "string" ? contributionId : null,
     context,
   });
   return true;
