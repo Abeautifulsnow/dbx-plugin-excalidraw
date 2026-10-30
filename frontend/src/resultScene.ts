@@ -18,10 +18,35 @@ export interface GridSceneOptions {
   maxColumns?: number;
   /** Serialized-size ceiling; rows are dropped until the scene fits. */
   maxBytes?: number;
+  /**
+   * Where the grid lands and which id namespace it uses. Default: the
+   * historical origin and bare ids, so standalone canvases look exactly as
+   * they always have. Appends must bring a fresh prefix — Excalidraw keys
+   * elements by id, and the builder's ids are fixed literals, so a second
+   * grid in one scene without a prefix would silently shadow the first.
+   */
+  placement?: GridPlacement;
+}
+
+/** Where an appended grid lands: origin in scene coordinates plus an id namespace. */
+export interface GridPlacement {
+  idPrefix: string;
+  x: number;
+  y: number;
+}
+
+/** Axis-aligned box over a set of elements, in scene coordinates. */
+export interface SceneBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface GridSceneResult {
   scene: ExcalidrawScene;
+  /** Absolute bounds of the built elements; what an append measures against. */
+  bounds: SceneBounds;
   includedRows: number;
   includedColumns: number;
   totalRows: number;
@@ -68,6 +93,15 @@ const SCENE_MARGIN = 40;
 export const MAX_ROWS = 200;
 const MAX_COLUMNS = 24;
 const DEFAULT_MAX_BYTES = 1_500_000;
+
+/** Gap between existing canvas content and an appended grid. */
+export const APPEND_GAP = 80;
+/**
+ * The backend's saveScene ceiling (documents.go maxSceneBytes). The builder's
+ * own budget is deliberately smaller; appends shrink theirs by what the
+ * target scene already weighs, which is why the limit lives here too.
+ */
+export const SCENE_BYTE_LIMIT = 2_000_000;
 
 /** Row counts the UI offers, before the available row count is folded in. */
 export const ROW_CHOICES = [10, 25, 50, 100, MAX_ROWS];
@@ -355,11 +389,21 @@ function columnWidths(columns: string[], rows: string[][]): number[] {
 }
 
 /** Emits the title and caption; returns the y coordinate the table starts at. */
-function pushHeading(elements: SceneElement[], options: GridSceneOptions, sequence: () => number): number {
-  let cursorY = SCENE_MARGIN;
+function pushHeading(
+  elements: SceneElement[],
+  options: GridSceneOptions,
+  placement: GridPlacement,
+  sequence: () => number,
+): number {
+  let cursorY = placement.y;
   if (options.title) {
     elements.push(
-      singleLineElement("title", options.title, { x: SCENE_MARGIN, y: cursorY, fontSize: TITLE_FONT_SIZE, fontFamily: 2 }, sequence),
+      singleLineElement(
+        `${placement.idPrefix}title`,
+        options.title,
+        { x: placement.x, y: cursorY, fontSize: TITLE_FONT_SIZE, fontFamily: 2 },
+        sequence,
+      ),
     );
   }
   cursorY += TITLE_FONT_SIZE * LINE_HEIGHT + 12;
@@ -368,9 +412,9 @@ function pushHeading(elements: SceneElement[], options: GridSceneOptions, sequen
       options.caption.length > MAX_CELL_CHARS ? `${options.caption.slice(0, MAX_CELL_CHARS - 1)}…` : options.caption;
     elements.push(
       singleLineElement(
-        "caption",
+        `${placement.idPrefix}caption`,
         caption,
-        { x: SCENE_MARGIN, y: cursorY, fontSize: CAPTION_FONT_SIZE, strokeColor: CAPTION_STROKE },
+        { x: placement.x, y: cursorY, fontSize: CAPTION_FONT_SIZE, strokeColor: CAPTION_STROKE },
         sequence,
       ),
     );
@@ -385,11 +429,13 @@ interface TableLayout {
   widths: number[];
   tableWidth: number;
   tableTop: number;
+  placement: GridPlacement;
 }
 
 /** Emits the row bands, border, header and cells, in back-to-front order. */
 function pushTable(elements: SceneElement[], layout: TableLayout, sequence: () => number): void {
-  const { columns, rows, widths, tableWidth, tableTop } = layout;
+  const { columns, rows, widths, tableWidth, tableTop, placement } = layout;
+  const { idPrefix, x: originX } = placement;
   const tableHeight = ROW_HEIGHT * (rows.length + 1);
 
   // Alternating row bands first, so they sit behind the text and the header.
@@ -397,9 +443,9 @@ function pushTable(elements: SceneElement[], layout: TableLayout, sequence: () =
     if (rowIndex % 2 === 1) {
       elements.push(
         rectElement(
-          `row-${rowIndex}`,
+          `${idPrefix}row-${rowIndex}`,
           {
-            x: SCENE_MARGIN,
+            x: originX,
             y: tableTop + ROW_HEIGHT * (rowIndex + 1),
             width: tableWidth,
             height: ROW_HEIGHT,
@@ -411,17 +457,21 @@ function pushTable(elements: SceneElement[], layout: TableLayout, sequence: () =
       );
     }
   });
-  elements.push(rectElement("table", { x: SCENE_MARGIN, y: tableTop, width: tableWidth, height: tableHeight }, sequence));
+  elements.push(rectElement(`${idPrefix}table`, { x: originX, y: tableTop, width: tableWidth, height: tableHeight }, sequence));
 
-  let cursorX = SCENE_MARGIN;
+  let cursorX = originX;
   columns.forEach((column, index) => {
     const width = widths[index];
     elements.push(
-      rectElement(`head-${index}`, { x: cursorX, y: tableTop, width, height: ROW_HEIGHT, backgroundColor: HEADER_FILL }, sequence),
+      rectElement(
+        `${idPrefix}head-${index}`,
+        { x: cursorX, y: tableTop, width, height: ROW_HEIGHT, backgroundColor: HEADER_FILL },
+        sequence,
+      ),
     );
     elements.push(
       textElement(
-        `head-text-${index}`,
+        `${idPrefix}head-text-${index}`,
         cellText(column),
         { x: cursorX + CELL_PADDING_X, y: tableTop, width: width - CELL_PADDING_X * 2, height: ROW_HEIGHT, fontSize: HEADER_FONT_SIZE },
         sequence,
@@ -431,12 +481,12 @@ function pushTable(elements: SceneElement[], layout: TableLayout, sequence: () =
   });
 
   rows.forEach((row, rowIndex) => {
-    let cellX = SCENE_MARGIN;
+    let cellX = originX;
     row.forEach((value, columnIndex) => {
       const width = widths[columnIndex];
       elements.push(
         textElement(
-          `c-${rowIndex}-${columnIndex}`,
+          `${idPrefix}c-${rowIndex}-${columnIndex}`,
           value,
           {
             x: cellX + CELL_PADDING_X,
@@ -454,14 +504,15 @@ function pushTable(elements: SceneElement[], layout: TableLayout, sequence: () =
 
 function buildOnce(grid: ResultGrid, options: GridSceneOptions, rowCount: number): ExcalidrawScene {
   const sequence = makeSequence();
+  const placement = options.placement ?? { idPrefix: "", x: SCENE_MARGIN, y: SCENE_MARGIN };
   const columns = grid.columns;
   const rows = grid.rows.slice(0, rowCount).map((row) => columns.map((_, index) => cellText(row[index])));
   const widths = columnWidths(columns, rows);
   const tableWidth = widths.reduce((sum, width) => sum + width, 0);
 
   const elements: SceneElement[] = [];
-  const tableTop = pushHeading(elements, options, sequence);
-  pushTable(elements, { columns, rows, widths, tableWidth, tableTop }, sequence);
+  const tableTop = pushHeading(elements, options, placement, sequence);
+  pushTable(elements, { columns, rows, widths, tableWidth, tableTop, placement }, sequence);
 
   return {
     type: "excalidraw",
@@ -517,6 +568,7 @@ export function buildGridScene(grid: ResultGrid, options: GridSceneOptions = {})
 
   return {
     scene: best.scene,
+    bounds: sceneBounds(best.scene.elements) ?? { x: 0, y: 0, width: 0, height: 0 },
     includedRows: bestRows,
     includedColumns: columns.length,
     totalRows,
@@ -525,4 +577,185 @@ export function buildGridScene(grid: ResultGrid, options: GridSceneOptions = {})
     droppedColumns,
     bytes: best.bytes,
   };
+}
+
+/**
+ * Bounding box over the live elements of a scene, read defensively: callers
+ * hand it freshly built scenes and stored JSON of unknown age alike. Deleted
+ * elements are tombstones and do not extend the box; a scene with nothing
+ * measurable has no bounds, which appendPlacement turns into the default
+ * origin.
+ */
+export function sceneBounds(elements: readonly unknown[]): SceneBounds | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const element of elements) {
+    if (!element || typeof element !== "object") {
+      continue;
+    }
+    const candidate = element as Record<string, unknown>;
+    if (candidate.isDeleted === true || typeof candidate.x !== "number" || typeof candidate.y !== "number") {
+      continue;
+    }
+    const width = typeof candidate.width === "number" ? candidate.width : 0;
+    const height = typeof candidate.height === "number" ? candidate.height : 0;
+    minX = Math.min(minX, candidate.x);
+    minY = Math.min(minY, candidate.y);
+    maxX = Math.max(maxX, candidate.x + width);
+    maxY = Math.max(maxY, candidate.y + height);
+  }
+  if (!Number.isFinite(minX)) {
+    return null;
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+/**
+ * Where an appended grid lands: right of everything already on the canvas and
+ * top-aligned with it, so two result sets of similar shape read as side-by-side
+ * columns. Nothing on the canvas yet means the default margin origin.
+ */
+export function appendPlacement(bounds: SceneBounds | null, idPrefix: string): GridPlacement {
+  if (!bounds) {
+    return { idPrefix, x: SCENE_MARGIN, y: SCENE_MARGIN };
+  }
+  return { idPrefix, x: Math.round(bounds.x + bounds.width + APPEND_GAP), y: Math.round(bounds.y) };
+}
+
+/**
+ * Per-merge id namespace. The builder emits fixed literal ids, and Excalidraw
+ * keys elements by id — a repeat id silently shadows its twin — so every merge
+ * into an existing scene must bring a prefix that scene has never seen.
+ */
+export function makeIdPrefix(): string {
+  return `g${Date.now().toString(36)}-${Math.floor(Math.random() * 4294967296).toString(36)}-`;
+}
+
+/**
+ * Titles every appended table so same-table queries stay tellable apart on a
+ * shared canvas: if the target already carries this exact title, the newcomer
+ * is numbered ("Query: t (2)"). Only title-size text elements hold the
+ * namespace — cell text at its smaller font cannot squat it.
+ */
+export function uniqueGridTitle(existingElements: readonly unknown[], base: string): string {
+  const taken = new Set<string>();
+  for (const element of existingElements) {
+    if (!element || typeof element !== "object") {
+      continue;
+    }
+    const candidate = element as Record<string, unknown>;
+    if (candidate.isDeleted === true || candidate.type !== "text" || candidate.fontSize !== TITLE_FONT_SIZE) {
+      continue;
+    }
+    if (typeof candidate.text === "string") {
+      taken.add(candidate.text);
+    }
+  }
+  if (!taken.has(base)) {
+    return base;
+  }
+  for (let index = 2; ; index += 1) {
+    const candidate = `${base} (${index})`;
+    if (!taken.has(candidate)) {
+      return candidate;
+    }
+  }
+}
+
+/**
+ * The stored-scene subset the merge reads or preserves. Unknown extra fields
+ * ride along through the spread, so nothing a future scene format adds is
+ * dropped on append.
+ */
+export interface StoredSceneLike {
+  type?: unknown;
+  version?: unknown;
+  source?: unknown;
+  elements?: unknown;
+  appState?: Record<string, unknown>;
+  files?: Record<string, unknown>;
+}
+
+export type MergeOutcome =
+  | { ok: true; scene: ExcalidrawScene; layout: GridSceneResult }
+  | { ok: false; reason: "scene-full" };
+
+/** Below this even a 0-row grid has no room; report the scene as full instead. */
+const MIN_GRID_BUDGET = 2_000;
+/** Headroom for drift between the estimate here and the backend's byte count. */
+const MERGE_SLACK = 4_000;
+/** Budget retried with before giving up; each retry drops rows, never columns. */
+const MERGE_ATTEMPTS = 4;
+
+function utf8Length(json: string): number {
+  return new TextEncoder().encode(json).byteLength;
+}
+
+/**
+ * Builds the grid for an append and merges it into a stored scene under the
+ * backend's scene-size ceiling, reporting exactly what was left out through
+ * the returned layout. The grid's budget starts at whatever the target scene
+ * has not used up and shrinks on measured overshoot: the builder measures in
+ * UTF-16 units while the ceiling counts UTF-8 bytes, so CJK-heavy cells can
+ * push a "fitting" grid over the limit — each retry then trades rows until the
+ * merged bytes verifiably fit. `scene-full` means even an empty grid would not
+ * fit any more: the caller should say the target canvas is full rather than
+ * silently shipping less than the preview promised.
+ *
+ * The appended elements are namespaced by `placement.idPrefix`; without a
+ * fresh prefix the builder's fixed ids would shadow the grid appended before
+ * them (restore() keys elements by id, and the shadowed twin disappears).
+ */
+export function mergeGridIntoScene(
+  existing: StoredSceneLike | null,
+  params: {
+    grid: ResultGrid;
+    title: string;
+    caption?: string;
+    maxRows?: number;
+    maxColumns?: number;
+    placement: GridPlacement;
+  },
+): MergeOutcome {
+  const existingElements = Array.isArray(existing?.elements) ? (existing!.elements as unknown[]) : [];
+  const existingBytes = existing ? utf8Length(JSON.stringify(existing)) : 0;
+  let budget = Math.min(DEFAULT_MAX_BYTES, SCENE_BYTE_LIMIT - existingBytes - MERGE_SLACK);
+
+  for (let attempt = 0; attempt < MERGE_ATTEMPTS; attempt += 1) {
+    if (budget < MIN_GRID_BUDGET) {
+      return { ok: false, reason: "scene-full" };
+    }
+    const layout = buildGridScene(params.grid, {
+      title: params.title,
+      caption: params.caption,
+      maxRows: params.maxRows,
+      maxColumns: params.maxColumns,
+      placement: params.placement,
+      maxBytes: budget,
+    });
+    // Defaults first so a stored scene without appState (the empty scene the
+    // backend mints on create) still opens; the stored values win over them.
+    const scene = (
+      existing
+        ? {
+            type: "excalidraw" as const,
+            version: 2,
+            source: "dbx.excalidraw.studio",
+            appState: {},
+            files: {},
+            ...existing,
+            elements: [...existingElements, ...layout.scene.elements],
+          }
+        : layout.scene
+    ) as ExcalidrawScene;
+    const bytes = utf8Length(JSON.stringify(scene));
+    if (bytes <= SCENE_BYTE_LIMIT) {
+      return { ok: true, scene, layout };
+    }
+    const gridBytes = Math.max(1, bytes - existingBytes);
+    budget -= Math.ceil(((bytes - SCENE_BYTE_LIMIT) * budget) / gridBytes);
+  }
+  return { ok: false, reason: "scene-full" };
 }

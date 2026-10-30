@@ -1,24 +1,35 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import { withCause } from "./errors";
 import { revealInFileManager } from "./fileManager";
+import { persistImportedScene } from "./persistence";
 import { setPref, usePrefs } from "./prefs";
 import {
+  appendPlacement,
   buildGridScene,
   cellText,
   deriveName,
+  makeIdPrefix,
+  mergeGridIntoScene,
   resolveRowLimit,
   rowChoices,
+  sceneBounds,
+  uniqueGridTitle,
   type GridSceneResult,
+  type MergeOutcome,
+  type ResultGrid,
+  type StoredSceneLike,
 } from "./resultScene";
 import { buildPlanAiContext, buildPlanScene, parsePlan, type ParsedPlan } from "./plan";
 import { planRecommendations, resultRecommendations, setAiRecommendations } from "./aiRecommendations";
 import { useAiRecommendations } from "./useAiRecommendations";
-import { formatAll, type Strings } from "./i18n";
+import { formatAll, relativeTime, type Lang, type Strings } from "./i18n";
 import type { DocumentMeta, ResultSetContext } from "./types";
 
 interface ResultViewPageProps {
   t: Strings;
+  /** For the append picker's timestamps; the host locale, verbatim. */
+  lang: Lang;
   /** Memoized by the caller: a fresh object per render would defeat the memos below. */
   data: ResultSetContext;
   onOpen: (meta: DocumentMeta) => void;
@@ -28,8 +39,12 @@ interface ResultViewPageProps {
 const PREVIEW_ROWS = 8;
 const PREVIEW_COLUMNS = 8;
 
-export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProps) {
+export function ResultViewPage({ t, lang, data, onOpen, onBrowse }: ResultViewPageProps) {
   const prefs = usePrefs();
+  // The append dialog shares the prepared grid and the SQL caption with the
+  // standalone preview, so both paths lay out exactly what the page shows.
+  const [appendOpen, setAppendOpen] = useState(false);
+  const closeAppend = useCallback(() => setAppendOpen(false), []);
   const availableRows = data.result.rows.length;
   // Null until the user picks a count on this result; the remembered preference
   // is applied through resolveRowLimit, which tolerates arriving late.
@@ -39,17 +54,21 @@ export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProp
   const hasResult = data.result.columns.length > 0 || availableRows > 0;
   const title = deriveName(data.sql) || t.resultViewTitle;
 
+  // The cells are flattened to display text once; the preview and the append
+  // merge must never disagree about what is going on the canvas.
+  const grid = useMemo(
+    () => ({ columns: data.result.columns, rows: data.result.rows.map((row) => row.map(cellText)) }),
+    [data],
+  );
+  const caption = data.sql.replace(/\s+/g, " ").trim() || undefined;
+
   // What the canvas will actually hold. Building the layout here rather than
   // only on submit keeps the preview honest: the scene builder drops rows to fit
   // its byte budget and columns beyond its cap, and the page must say so instead
   // of repeating the requested counts back at the user.
   const layout = useMemo(
-    () =>
-      buildGridScene(
-        { columns: data.result.columns, rows: data.result.rows.map((row) => row.map(cellText)) },
-        { title, caption: data.sql.replace(/\s+/g, " ").trim() || undefined, maxRows: rowLimit },
-      ),
-    [data, rowLimit, title],
+    () => buildGridScene(grid, { title, caption, maxRows: rowLimit }),
+    [grid, rowLimit, title, caption],
   );
 
   const changeRowLimit = (rows: number) => {
@@ -102,6 +121,7 @@ export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProp
         canPlan={planReady}
         canAi={aiExplainReady}
         onCreate={actions.create}
+        onAppend={() => setAppendOpen(true)}
         onPlan={actions.createPlan}
         onExplainAi={actions.explainPlanAi}
         onBrowse={onBrowse}
@@ -132,6 +152,19 @@ export function ResultViewPage({ t, data, onOpen, onBrowse }: ResultViewPageProp
             <ResultPreview t={t} data={data} availableRows={availableRows} />
           )}
         </>
+      )}
+
+      {appendOpen && (
+        <AppendCanvasDialog
+          t={t}
+          lang={lang}
+          grid={grid}
+          title={title}
+          caption={caption}
+          maxRows={rowLimit}
+          onOpen={onOpen}
+          onClose={closeAppend}
+        />
       )}
 
       {actions.failure && <div className="toast toast--error">{actions.failure}</div>}
@@ -330,13 +363,14 @@ interface ResultHeaderProps {
   canPlan: boolean;
   canAi: boolean;
   onCreate: () => void;
+  onAppend: () => void;
   onPlan: () => void;
   onExplainAi: () => void;
   onBrowse: () => void;
   onReveal: () => void;
 }
 
-function ResultHeader({ t, busy, canCreate, canPlan, canAi, onCreate, onPlan, onExplainAi, onBrowse, onReveal }: ResultHeaderProps) {
+function ResultHeader({ t, busy, canCreate, canPlan, canAi, onCreate, onAppend, onPlan, onExplainAi, onBrowse, onReveal }: ResultHeaderProps) {
   return (
     <header className="home-header">
       <div>
@@ -360,6 +394,9 @@ function ResultHeader({ t, busy, canCreate, canPlan, canAi, onCreate, onPlan, on
             {t.planAi}
           </button>
         )}
+        <button type="button" className="btn" onClick={onAppend} disabled={busy || !canCreate}>
+          {t.resultViewAppend}
+        </button>
         <button type="button" className="btn btn--primary" onClick={onCreate} disabled={busy || !canCreate}>
           {busy ? t.resultViewCreating : t.resultViewCreate}
         </button>
@@ -485,6 +522,279 @@ function ResultPreview({ t, data, availableRows }: ResultPreviewProps) {
         {formatAll(t.resultViewPreviewNote, { n: Math.min(PREVIEW_ROWS, availableRows), total: availableRows })}
         {omittedColumns > 0 ? ` ${formatAll(t.resultViewOmittedColumns, { n: omittedColumns })}` : ""}
       </p>
+    </div>
+  );
+}
+
+interface AppendTarget {
+  meta: DocumentMeta;
+  scene: StoredSceneLike | null;
+  corrupt: boolean;
+}
+
+/**
+ * The append dialog's data layer: the document list with its load failure, the
+ * picked target and its scene-loading state, and the single failure slot
+ * shared by target loads and the append save. Extracted from the dialog so the
+ * component stays a description of what it renders.
+ *
+ * document/list arrives in the backend's own order — last opened first — so
+ * the preselected first entry is the canvas the user touched last, which is
+ * where a second result set almost always belongs. document/get also bumps
+ * the target's lastOpened, so weighing a canvas moves it to the top of the
+ * list the same way opening it would.
+ */
+function useAppendTargets(t: Strings) {
+  const [documents, setDocuments] = useState<DocumentMeta[] | null>(null);
+  const [loadFailure, setLoadFailure] = useState<string | null>(null);
+  const [targetId, setTargetId] = useState<string | null>(null);
+  const [target, setTarget] = useState<AppendTarget | null>(null);
+  const [sceneLoading, setSceneLoading] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await api.listDocuments();
+        if (cancelled) {
+          return;
+        }
+        setDocuments(response.items);
+        setTargetId(response.items[0]?.id ?? null);
+      } catch (error) {
+        console.error("[result-view] append list failed", error);
+        if (!cancelled) {
+          setLoadFailure(withCause(t.resultViewAppendFailed, error));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
+
+  useEffect(() => {
+    if (!targetId) {
+      setTarget(null);
+      return;
+    }
+    let cancelled = false;
+    setSceneLoading(true);
+    setFailure(null);
+    (async () => {
+      try {
+        const response = await api.getDocument(targetId);
+        if (cancelled) {
+          return;
+        }
+        setTarget({
+          meta: response.document,
+          scene: (response.scene ?? null) as StoredSceneLike | null,
+          corrupt: response.corrupt,
+        });
+      } catch (error) {
+        console.error("[result-view] append target load failed", error);
+        if (!cancelled) {
+          setFailure(withCause(t.resultViewAppendFailed, error));
+        }
+      } finally {
+        if (!cancelled) {
+          setSceneLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [targetId, t]);
+
+  return { documents, loadFailure, targetId, setTargetId, target, sceneLoading, failure, setFailure };
+}
+
+interface AppendDocumentListProps {
+  t: Strings;
+  lang: Lang;
+  documents: DocumentMeta[];
+  targetId: string | null;
+  onSelect: (id: string) => void;
+  disabled: boolean;
+}
+
+/** The pick-one canvas list; selection state lives in the caller. */
+function AppendDocumentList({ t, lang, documents, targetId, onSelect, disabled }: AppendDocumentListProps) {
+  return (
+    <div className="append-dialog__list" role="listbox" aria-label={t.resultViewAppendPick}>
+      {documents.map((meta) => (
+        <button
+          key={meta.id}
+          type="button"
+          role="option"
+          aria-selected={meta.id === targetId}
+          className={`append-dialog__item${meta.id === targetId ? " append-dialog__item--selected" : ""}`}
+          onClick={() => onSelect(meta.id)}
+          disabled={disabled}
+        >
+          <span className="append-dialog__name">{meta.name}</span>
+          <span className="append-dialog__time">{relativeTime(meta.updatedAt, lang, t)}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface AppendOutcomeSummaryProps {
+  t: Strings;
+  outcome: MergeOutcome;
+}
+
+/** What the merge will actually place, with the ceiling's omissions called out. */
+function AppendOutcomeSummary({ t, outcome }: AppendOutcomeSummaryProps) {
+  if (!outcome.ok) {
+    return null;
+  }
+  return (
+    <div className="result-view__meta">
+      <span className="result-view__pill">
+        {formatAll(t.resultViewAppendSummary, {
+          n: outcome.layout.includedRows,
+          m: outcome.layout.includedColumns,
+        })}
+      </span>
+      {outcome.layout.droppedRows && (
+        <span className="result-view__pill">
+          {formatAll(t.resultViewOmitted, { n: outcome.layout.totalRows - outcome.layout.includedRows })}
+        </span>
+      )}
+      {outcome.layout.droppedColumns && (
+        <span className="result-view__pill">
+          {formatAll(t.resultViewOmittedColumns, { n: outcome.layout.totalColumns - outcome.layout.includedColumns })}
+        </span>
+      )}
+    </div>
+  );
+}
+
+interface AppendCanvasDialogProps {
+  t: Strings;
+  lang: Lang;
+  grid: ResultGrid;
+  /** The canvas title this result would carry, numbered against the target on merge. */
+  title: string;
+  caption?: string;
+  maxRows: number;
+  onOpen: (meta: DocumentMeta) => void;
+  onClose: () => void;
+}
+
+/**
+ * The pick-an-existing-canvas flow for the second and further result sets.
+ * Data loading lives in `useAppendTargets`; this component owns the merge
+ * preview, the confirm action, and what they render. The summary line reports
+ * the merged reality: rows the ceiling forced out of a nearly-full target
+ * show up here before anything is saved.
+ */
+function AppendCanvasDialog({ t, lang, grid, title, caption, maxRows, onOpen, onClose }: AppendCanvasDialogProps) {
+  const { documents, loadFailure, targetId, setTargetId, target, sceneLoading, failure, setFailure } =
+    useAppendTargets(t);
+  const [busy, setBusy] = useState(false);
+  // One namespace per dialog session: every merge targets a different stored
+  // scene, so even a repeated prefix across sessions could never collide.
+  const [idPrefix] = useState(makeIdPrefix);
+
+  // Escape closes the dialog like the backdrop does — but never under an
+  // in-flight save, where closing would hide an append that still lands.
+  useEffect(() => {
+    if (busy) {
+      return;
+    }
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [busy, onClose]);
+
+  const liveElements = useMemo(
+    () => (Array.isArray(target?.scene?.elements) ? (target!.scene!.elements as unknown[]) : []),
+    [target],
+  );
+  const outcome = useMemo<MergeOutcome | null>(() => {
+    if (!target || target.corrupt || sceneLoading) {
+      return null;
+    }
+    return mergeGridIntoScene(target.scene, {
+      grid,
+      title: uniqueGridTitle(liveElements, title),
+      caption,
+      maxRows,
+      placement: appendPlacement(sceneBounds(liveElements), idPrefix),
+    });
+  }, [target, sceneLoading, liveElements, grid, title, caption, maxRows, idPrefix]);
+
+  const confirm = async () => {
+    if (!outcome || !outcome.ok || !target) {
+      return;
+    }
+    setBusy(true);
+    setFailure(null);
+    try {
+      await persistImportedScene(target.meta.id, outcome.scene);
+      onOpen(target.meta);
+    } catch (error) {
+      console.error("[result-view] append failed", error);
+      setFailure(withCause(t.resultViewAppendFailed, error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal" role="dialog" aria-modal="true" aria-label={t.resultViewAppend} onClick={busy ? undefined : onClose}>
+      <div className="modal__panel append-dialog" onClick={(event) => event.stopPropagation()}>
+        <h2>{t.resultViewAppend}</h2>
+        <p>{t.resultViewAppendBody}</p>
+
+        {loadFailure ? (
+          <p className="append-dialog__status">{loadFailure}</p>
+        ) : documents === null ? (
+          <div className="append-dialog__loading">
+            <div className="spinner" aria-hidden="true" />
+          </div>
+        ) : documents.length === 0 ? (
+          <p className="append-dialog__status">{t.resultViewAppendEmptyList}</p>
+        ) : (
+          <AppendDocumentList
+            t={t}
+            lang={lang}
+            documents={documents}
+            targetId={targetId}
+            onSelect={setTargetId}
+            disabled={busy}
+          />
+        )}
+
+        {target?.corrupt && <p className="append-dialog__status">{t.resultViewAppendCorrupt}</p>}
+        {outcome && !outcome.ok && <p className="append-dialog__status">{t.resultViewAppendSceneFull}</p>}
+        {outcome && <AppendOutcomeSummary t={t} outcome={outcome} />}
+
+        <div className="modal__actions">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+            {t.cancel}
+          </button>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={() => void confirm()}
+            disabled={busy || sceneLoading || !target || target.corrupt || !outcome?.ok}
+          >
+            {busy ? t.resultViewAppendBusy : t.resultViewAppendConfirm}
+          </button>
+        </div>
+        {failure && <p className="append-dialog__status">{failure}</p>}
+      </div>
     </div>
   );
 }

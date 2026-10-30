@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { buildGridScene, cellText, deriveName, initialRowLimit, MAX_ROWS, resolveRowLimit, ROW_CHOICES, rowChoices, type ResultGrid } from "../resultScene";
+import {
+  APPEND_GAP,
+  appendPlacement,
+  buildGridScene,
+  cellText,
+  deriveName,
+  initialRowLimit,
+  makeIdPrefix,
+  MAX_ROWS,
+  mergeGridIntoScene,
+  resolveRowLimit,
+  ROW_CHOICES,
+  rowChoices,
+  SCENE_BYTE_LIMIT,
+  sceneBounds,
+  uniqueGridTitle,
+  type ResultGrid,
+} from "../resultScene";
 
 const TITLE_FONT_SIZE = 20;
 const CAPTION_FONT_SIZE = 12;
@@ -345,5 +362,254 @@ describe("resolveRowLimit", () => {
         }
       }
     }
+  });
+});
+
+describe("grid placement", () => {
+  it("defaults keep the historical ids and origin", () => {
+    const built = buildGridScene(grid(2, 2), { title: "T" });
+    const elements = elementsOf(built.scene);
+    const title = elements.find((element) => element.id === "title");
+    expect(title!.x).toBe(40);
+    expect(title!.y).toBe(40);
+    expect(elements.some((element) => element.id === "head-0")).toBe(true);
+  });
+
+  it("namespaces ids and shifts geometry by the placement", () => {
+    const base = buildGridScene(grid(2, 2), { title: "T" });
+    const placed = buildGridScene(grid(2, 2), { title: "T", placement: { idPrefix: "g1-", x: 500, y: 300 } });
+    const baseElements = elementsOf(base.scene);
+    const placedElements = elementsOf(placed.scene);
+    expect(placedElements.map((element) => element.id)).toEqual(baseElements.map((element) => `g1-${element.id}`));
+    // Placement is an absolute origin: everything shifts by (origin - default margin).
+    const deltaX = 500 - 40;
+    const deltaY = 300 - 40;
+    for (let index = 0; index < baseElements.length; index += 1) {
+      expect(placedElements[index].x).toBe((baseElements[index].x as number) + deltaX);
+      expect(placedElements[index].y).toBe((baseElements[index].y as number) + deltaY);
+    }
+  });
+
+  it("reports the absolute bounds of what it built", () => {
+    const placed = buildGridScene(grid(3, 2), { title: "T", placement: { idPrefix: "p-", x: 100, y: 60 } });
+    const elements = elementsOf(placed.scene);
+    const minX = Math.min(...elements.map((element) => element.x as number));
+    const minY = Math.min(...elements.map((element) => element.y as number));
+    const maxX = Math.max(...elements.map((element) => (element.x as number) + (element.width as number)));
+    const maxY = Math.max(...elements.map((element) => (element.y as number) + (element.height as number)));
+    expect(placed.bounds).toEqual({ x: minX, y: minY, width: maxX - minX, height: maxY - minY });
+  });
+});
+
+describe("sceneBounds", () => {
+  it("measures the live elements and skips tombstones", () => {
+    const bounds = sceneBounds([
+      { x: 10, y: 20, width: 30, height: 40 },
+      { x: 100, y: 5, width: 10, height: 10, isDeleted: true },
+      { x: -5, y: 50, width: 15, height: 25 },
+    ]);
+    expect(bounds).toEqual({ x: -5, y: 20, width: 45, height: 55 });
+  });
+
+  it("yields no bounds for empty or unreadable input", () => {
+    expect(sceneBounds([])).toBeNull();
+    expect(sceneBounds([{ isDeleted: true }])).toBeNull();
+    expect(sceneBounds([null, "text"])).toBeNull();
+  });
+});
+
+describe("appendPlacement", () => {
+  it("starts at the default margin on an empty canvas", () => {
+    expect(appendPlacement(null, "g-")).toEqual({ idPrefix: "g-", x: 40, y: 40 });
+  });
+
+  it("sits right of the existing content, top-aligned with it", () => {
+    expect(appendPlacement({ x: 40, y: 40, width: 300, height: 200 }, "g-")).toEqual({
+      idPrefix: "g-",
+      x: 40 + 300 + APPEND_GAP,
+      y: 40,
+    });
+  });
+});
+
+describe("makeIdPrefix", () => {
+  it("issues distinct prefixes shaped for namespacing", () => {
+    const first = makeIdPrefix();
+    const second = makeIdPrefix();
+    expect(first).toMatch(/^g[0-9a-z]+-[0-9a-z]+-$/);
+    expect(second).not.toBe(first);
+  });
+});
+
+describe("uniqueGridTitle", () => {
+  const titleElement = (text: string, fontSize = 20) => ({ type: "text", text, fontSize });
+
+  it("passes an unused title through untouched", () => {
+    expect(uniqueGridTitle([titleElement("Other")], "Query: t")).toBe("Query: t");
+  });
+
+  it("numbers a title the target already shows", () => {
+    expect(uniqueGridTitle([titleElement("Query: t")], "Query: t")).toBe("Query: t (2)");
+    expect(uniqueGridTitle([titleElement("Query: t"), titleElement("Query: t (2)")], "Query: t")).toBe("Query: t (3)");
+  });
+
+  it("ignores deleted titles and cell-size text", () => {
+    const elements = [
+      { type: "text", text: "Query: t", fontSize: 20, isDeleted: true },
+      { type: "text", text: "Query: t", fontSize: 13 },
+      { type: "rectangle", text: "Query: t", fontSize: 20 },
+    ];
+    expect(uniqueGridTitle(elements, "Query: t")).toBe("Query: t");
+  });
+});
+
+describe("mergeGridIntoScene", () => {
+  const emptyStored = () => ({
+    type: "excalidraw",
+    version: 2,
+    source: "dbx.excalidraw.studio",
+    elements: [] as unknown[],
+    appState: {},
+    files: {},
+  });
+
+  it("appends prefixed elements after the existing ones and preserves the envelope", () => {
+    const existing = emptyStored();
+    existing.elements = [{ id: "drawn", type: "rectangle", x: 0, y: 0, width: 50, height: 50 }];
+    existing.appState = { viewBackgroundColor: "#ffffff" };
+    const outcome = mergeGridIntoScene(existing, {
+      grid: grid(2, 2),
+      title: "T",
+      caption: "SELECT 1",
+      maxRows: 2,
+      placement: appendPlacement(sceneBounds(existing.elements), "g1-"),
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const scene = outcome.scene as unknown as Record<string, unknown>;
+    const elements = scene.elements as Record<string, unknown>[];
+    expect(elements[0]).toBe(existing.elements[0]);
+    expect(scene.appState).toEqual({ viewBackgroundColor: "#ffffff" });
+    // The appended grid clears the existing content with the standard gap.
+    expect(elements[1].id).toBe("g1-title");
+    expect(elements[1].x).toBe(50 + APPEND_GAP);
+    const ids = elements.map((element) => element.id as string);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("returns the built scene unchanged when the target is null", () => {
+    const outcome = mergeGridIntoScene(null, {
+      grid: grid(1, 1),
+      title: "T",
+      placement: { idPrefix: "g-", x: 40, y: 40 },
+    });
+    const direct = buildGridScene(grid(1, 1), { title: "T", placement: { idPrefix: "g-", x: 40, y: 40 } });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    expect(outcome.scene).toEqual(direct.scene);
+  });
+
+  it("drops rows until the merged scene fits the backend ceiling", () => {
+    const existing = emptyStored();
+    existing.elements = [
+      { id: "blob", type: "text", x: 0, y: 0, width: 100, height: 20, text: "x".repeat(1_950_000) },
+    ];
+    const outcome = mergeGridIntoScene(existing, {
+      grid: grid(MAX_ROWS, 8),
+      title: "T",
+      maxRows: MAX_ROWS,
+      placement: { idPrefix: "g-", x: 40, y: 40 },
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    expect(outcome.layout.includedRows).toBeLessThan(MAX_ROWS);
+    expect(new TextEncoder().encode(JSON.stringify(outcome.scene)).byteLength).toBeLessThanOrEqual(SCENE_BYTE_LIMIT);
+  });
+
+  it("reports a full scene when even an empty grid cannot fit", () => {
+    const existing = emptyStored();
+    existing.elements = [
+      { id: "blob", type: "text", x: 0, y: 0, width: 100, height: 20, text: "x".repeat(SCENE_BYTE_LIMIT + 10_000) },
+    ];
+    const outcome = mergeGridIntoScene(existing, {
+      grid: grid(2, 2),
+      title: "T",
+      placement: { idPrefix: "g-", x: 40, y: 40 },
+    });
+    expect(outcome).toEqual({ ok: false, reason: "scene-full" });
+  });
+
+  it("shrinks the grid budget again when CJK cells inflate past the ceiling", () => {
+    // The builder measures in UTF-16 units while the ceiling counts UTF-8
+    // bytes; a CJK-heavy grid must push past the limit on the first attempt
+    // so only the budget-retry loop can land the merge under it.
+    const existing = emptyStored();
+    existing.elements = [
+      { id: "blob", type: "text", x: 0, y: 0, width: 100, height: 20, text: "x".repeat(1_900_000) },
+    ];
+    const cjkGrid: ResultGrid = {
+      columns: ["编号", "名称", "状态", "时间", "来源", "备注", "版本", "路径"],
+      rows: Array.from({ length: MAX_ROWS }, () => Array.from({ length: 8 }, () => "中".repeat(60))),
+    };
+    const outcome = mergeGridIntoScene(existing, {
+      grid: cjkGrid,
+      title: "T",
+      maxRows: MAX_ROWS,
+      placement: { idPrefix: "g-", x: 40, y: 40 },
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    expect(outcome.layout.includedRows).toBeLessThan(MAX_ROWS);
+    expect(new TextEncoder().encode(JSON.stringify(outcome.scene)).byteLength).toBeLessThanOrEqual(SCENE_BYTE_LIMIT);
+  });
+
+  it("keeps unreadable stored elements and skips them when placing", () => {
+    const existing = emptyStored();
+    existing.elements = [
+      "garbage",
+      42,
+      { id: "kept", type: "rectangle", x: 0, y: 0, width: 50, height: 50 },
+    ];
+    const outcome = mergeGridIntoScene(existing, {
+      grid: grid(1, 1),
+      title: "T",
+      placement: appendPlacement(sceneBounds(existing.elements), "g1-"),
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const elements = (outcome.scene as unknown as Record<string, unknown>).elements as unknown[];
+    // Unreadable entries ride along untouched; restore() is the authority on
+    // what they mean, and dropping them here would be a silent data change.
+    expect(elements.slice(0, 3)).toEqual(existing.elements);
+    // Placement measured only the measurable element, so the grid clears it.
+    expect((elements[3] as Record<string, unknown>).x).toBe(50 + APPEND_GAP);
+  });
+
+  it("numbers the appended title against the titles the target already shows", () => {
+    const existing = emptyStored();
+    existing.elements = [
+      { id: "t", type: "text", x: 0, y: 0, width: 100, height: 25, text: "Query: t", fontSize: 20 },
+    ];
+    const outcome = mergeGridIntoScene(existing, {
+      grid: grid(1, 1),
+      title: uniqueGridTitle(existing.elements, "Query: t"),
+      placement: appendPlacement(sceneBounds(existing.elements), "g1-"),
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      return;
+    }
+    const elements = (outcome.scene as unknown as Record<string, unknown>).elements as Record<string, unknown>[];
+    expect(elements.some((element) => element.id === "g1-title" && element.text === "Query: t (2)")).toBe(true);
   });
 });

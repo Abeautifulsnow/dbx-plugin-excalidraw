@@ -5,7 +5,7 @@ import { persistImportedScene } from "./persistence";
 import { setPref, usePrefs } from "./prefs";
 import { useAiRecommendations } from "./useAiRecommendations";
 import type { DocumentMeta } from "./types";
-import { format, type Lang, type Strings } from "./i18n";
+import { relativeTime, type Lang, type Strings } from "./i18n";
 
 /**
  * The home screen's filter term, remembered across sessions.
@@ -352,25 +352,3 @@ export function HomePage({ lang, t, onOpen }: HomePageProps) {
   );
 }
 
-function relativeTime(iso: string, lang: Lang, t: Strings): string {
-  const timestamp = Date.parse(iso);
-  if (!Number.isFinite(timestamp)) {
-    return "";
-  }
-  const minutes = Math.floor((Date.now() - timestamp) / 60_000);
-  if (minutes < 1) {
-    return t.justNow;
-  }
-  if (minutes < 60) {
-    return format(t.minutesAgo, minutes);
-  }
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return format(t.hoursAgo, hours);
-  }
-  const days = Math.floor(hours / 24);
-  if (days < 7) {
-    return format(t.daysAgo, days);
-  }
-  return new Date(timestamp).toLocaleDateString(lang === "zh" ? "zh-CN" : "en");
-}

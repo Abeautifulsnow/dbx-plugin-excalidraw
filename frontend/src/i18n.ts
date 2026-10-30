@@ -69,6 +69,16 @@ export interface Strings {
   resultViewOmittedColumns: string;
   resultViewSql: string;
   resultViewOpenExisting: string;
+  resultViewAppend: string;
+  resultViewAppendBody: string;
+  resultViewAppendPick: string;
+  resultViewAppendSummary: string;
+  resultViewAppendBusy: string;
+  resultViewAppendConfirm: string;
+  resultViewAppendEmptyList: string;
+  resultViewAppendCorrupt: string;
+  resultViewAppendSceneFull: string;
+  resultViewAppendFailed: string;
   planCreate: string;
   planCreating: string;
   planSceneTitle: string;
@@ -173,6 +183,17 @@ const en: Strings = {
   resultViewOmittedColumns: "{n} columns left off",
   resultViewSql: "SQL",
   resultViewOpenExisting: "Open a diagram",
+  resultViewAppend: "Add to a canvas",
+  resultViewAppendBody:
+    "Pick a canvas; the result lands as a new table to the right of its content, ready for side-by-side comparison.",
+  resultViewAppendPick: "Pick a canvas",
+  resultViewAppendSummary: "Adds {n} rows × {m} columns",
+  resultViewAppendBusy: "Adding…",
+  resultViewAppendConfirm: "Add",
+  resultViewAppendEmptyList: "No canvases yet — create one first with Create canvas.",
+  resultViewAppendCorrupt: "That diagram is damaged and cannot take an append.",
+  resultViewAppendSceneFull: "That canvas has reached the 2 MB scene limit; nothing more fits.",
+  resultViewAppendFailed: "Could not add to the canvas.",
   planCreate: "Plan on canvas",
   planCreating: "Planning…",
   planSceneTitle: "Execution plan",
@@ -282,6 +303,16 @@ const zh: Strings = {
   resultViewOmittedColumns: "省略了 {n} 列",
   resultViewSql: "SQL",
   resultViewOpenExisting: "打开已有图表",
+  resultViewAppend: "追加到已有画布",
+  resultViewAppendBody: "选择一张已有图表，这份结果会作为新表格放在它现有内容的右侧，方便并排比对。",
+  resultViewAppendPick: "选择目标图表",
+  resultViewAppendSummary: "将追加 {n} 行 × {m} 列",
+  resultViewAppendBusy: "追加中…",
+  resultViewAppendConfirm: "追加",
+  resultViewAppendEmptyList: "还没有可追加的图表——先用“创建画布”生成一张。",
+  resultViewAppendCorrupt: "这张图表已损坏，无法追加。",
+  resultViewAppendSceneFull: "这张画布已达到 2 MB 场景上限，放不下更多内容。",
+  resultViewAppendFailed: "追加失败。",
   planCreate: "计划上画布",
   planCreating: "生成计划…",
   planSceneTitle: "执行计划",
@@ -386,4 +417,32 @@ export function formatAll(template: string, values: Record<string, number | stri
   return template.replace(/\{(\w+)\}/g, (match, key: string) =>
     key in values ? String(values[key]) : match,
   );
+}
+
+/**
+ * Relative timestamp for document listings. Lives here rather than in a page
+ * component so every surface that lists documents (the home grid, the append
+ * picker) renders identical times from one implementation.
+ */
+export function relativeTime(iso: string, lang: Lang, t: Strings): string {
+  const timestamp = Date.parse(iso);
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+  const minutes = Math.floor((Date.now() - timestamp) / 60_000);
+  if (minutes < 1) {
+    return t.justNow;
+  }
+  if (minutes < 60) {
+    return format(t.minutesAgo, minutes);
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return format(t.hoursAgo, hours);
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 7) {
+    return format(t.daysAgo, days);
+  }
+  return new Date(timestamp).toLocaleDateString(lang === "zh" ? "zh-CN" : "en");
 }

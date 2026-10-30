@@ -104,7 +104,7 @@ export function App() {
           </button>
         )}
         {current.name === "result" && resultSet && (
-          <ResultViewPage t={t} data={resultSet} onOpen={openDocument} onBrowse={back} />
+          <ResultViewPage t={t} lang={lang} data={resultSet} onOpen={openDocument} onBrowse={back} />
         )}
         {current.name === "home" && <HomePage lang={lang} t={t} onOpen={openDocument} />}
         {current.name === "editor" && (
