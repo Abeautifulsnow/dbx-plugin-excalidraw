@@ -21,6 +21,7 @@ import {
   type StoredSceneLike,
 } from "./resultScene";
 import { buildPlanAiContext, buildPlanScene, parsePlan, type ParsedPlan } from "./plan";
+import { buildResultAiSnapshot } from "./resultAi";
 import { planRecommendations, resultRecommendations, setAiRecommendations } from "./aiRecommendations";
 import { useAiRecommendations } from "./useAiRecommendations";
 import { formatAll, relativeTime, type Lang, type Strings } from "./i18n";
@@ -38,6 +39,32 @@ interface ResultViewPageProps {
 
 const PREVIEW_ROWS = 8;
 const PREVIEW_COLUMNS = 8;
+
+/**
+ * The page's one busy/failure slot for every host-facing action: it always
+ * describes the last thing the user tried, whichever action hook ran it.
+ */
+function useActionSlot(): ActionSlot {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  return { busy, setBusy, failure, setFailure };
+}
+
+/**
+ * T-B: while this tab holds a result set, seed the AI panel's suggestion
+ * chips with result-interpretation prompts — they ride the same context the
+ * host already gave this tab. An empty tab is a plain canvas and clears
+ * instead, like every other view without data to talk about. The hook
+ * re-asserts the stance on every visibilitychange, since the host keeps
+ * this webview mounted behind display:none while another tab is front.
+ */
+function useResultViewRecommendations(hasResult: boolean, t: Strings): void {
+  const viewRecommendations = useMemo(
+    () => (hasResult ? resultRecommendations(t) : null),
+    [hasResult, t],
+  );
+  useAiRecommendations(viewRecommendations);
+}
 
 export function ResultViewPage({ t, lang, data, onOpen, onBrowse }: ResultViewPageProps) {
   const prefs = usePrefs();
@@ -90,40 +117,48 @@ export function ResultViewPage({ t, lang, data, onOpen, onBrowse }: ResultViewPa
   // advertises the ai capability, otherwise the button could never succeed.
   const aiExplainReady =
     planReady && typeof window !== "undefined" && window.dbxPlugin?.capabilities?.ai === true;
+  // Unlike the plan handoff this needs no connection or SQL beyond what the
+  // page already shows: the snapshot is the result set itself.
+  const dataAiReady = typeof window !== "undefined" && window.dbxPlugin?.capabilities?.ai === true;
+  const slot = useActionSlot();
+  const { busy, failure } = slot;
+
   const actions = useResultViewActions({
     connectionId: data.connectionId,
     database: data.database,
     schema: data.schema,
     sql: data.sql,
     scene: layout.scene,
+    slot,
     t,
     onOpen,
   });
+  const aiActions = useResultViewAiActions({
+    connectionId: data.connectionId,
+    database: data.database,
+    schema: data.schema,
+    sql: data.sql,
+    result: data.result,
+    slot,
+    t,
+  });
 
-  // T-B: while this tab holds a result set, seed the AI panel's suggestion
-  // chips with result-interpretation prompts — they ride the same context the
-  // host already gave this tab. An empty tab is a plain canvas and clears
-  // instead, like every other view without data to talk about. The hook
-  // re-asserts the stance on every visibilitychange, since the host keeps
-  // this webview mounted behind display:none while another tab is front.
-  const viewRecommendations = useMemo(
-    () => (hasResult ? resultRecommendations(t) : null),
-    [hasResult, t],
-  );
-  useAiRecommendations(viewRecommendations);
+  useResultViewRecommendations(hasResult, t);
 
   return (
     <div className="result-view">
       <ResultHeader
         t={t}
-        busy={actions.busy}
+        busy={busy}
         canCreate={hasResult}
         canPlan={planReady}
         canAi={aiExplainReady}
+        canSendDataAi={dataAiReady}
         onCreate={actions.create}
         onAppend={() => setAppendOpen(true)}
         onPlan={actions.createPlan}
-        onExplainAi={actions.explainPlanAi}
+        onExplainAi={aiActions.explainPlanAi}
+        onSendDataAi={aiActions.sendDataAi}
         onBrowse={onBrowse}
         onReveal={actions.reveal}
       />
@@ -141,7 +176,7 @@ export function ResultViewPage({ t, lang, data, onOpen, onBrowse }: ResultViewPa
             layout={layout}
             availableRows={availableRows}
             rowLimit={rowLimit}
-            busy={actions.busy}
+            busy={busy}
             onRowLimitChange={changeRowLimit}
           />
           {availableRows === 0 ? (
@@ -167,29 +202,36 @@ export function ResultViewPage({ t, lang, data, onOpen, onBrowse }: ResultViewPa
         />
       )}
 
-      {actions.failure && <div className="toast toast--error">{actions.failure}</div>}
+      {failure && <div className="toast toast--error">{failure}</div>}
     </div>
   );
 }
 
-interface ResultViewActions {
+interface ActionSlot {
   busy: boolean;
-  /** Message for the most recently failed action; null when it succeeded. */
+  setBusy: (busy: boolean) => void;
   failure: string | null;
+  setFailure: (message: string | null) => void;
+}
+
+interface ResultViewActions {
   create: () => void;
   createPlan: () => void;
-  explainPlanAi: () => void;
   reveal: () => void;
 }
 
+interface ResultViewAiActions {
+  explainPlanAi: () => void;
+  sendDataAi: () => void;
+}
+
 /**
- * The page's two host-facing actions and their failure message, kept out of the
- * component so its body stays a description of what is rendered rather than a
- * mix of rendering and error plumbing.
- *
- * A single failure slot is enough because every action clears it before it
- * starts, so it always describes the last thing the user tried. The two messages
- * stay distinct — "could not create the canvas" and "could not open the file
+ * The page's canvas-facing actions (create, plan-on-canvas, reveal), kept out
+ * of the component so its body stays a description of what is rendered rather
+ * than a mix of rendering and error plumbing. AI-panel actions live in
+ * `useResultViewAiActions`; both share the page's single busy/failure slot, so
+ * it always describes the last thing the user tried. The messages stay
+ * distinct — "could not create the canvas" and "could not open the file
  * manager" are different problems and are worded as such.
  */
 function useResultViewActions(params: {
@@ -199,12 +241,12 @@ function useResultViewActions(params: {
   schema: string;
   sql: string;
   scene: GridSceneResult["scene"];
+  slot: ActionSlot;
   t: Strings;
   onOpen: (meta: DocumentMeta) => void;
 }): ResultViewActions {
-  const { connectionId, database, schema, sql, scene, t, onOpen } = params;
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const { connectionId, database, schema, sql, scene, slot, t, onOpen } = params;
+  const { setBusy, setFailure } = slot;
 
   const create = async () => {
     setBusy(true);
@@ -221,54 +263,13 @@ function useResultViewActions(params: {
     }
   };
 
-  // One plan fetch shared by both consumers, sequential on purpose:
-  // capabilities first (a connection without estimated-plan support should say
-  // so instead of surfacing a host-side EXPLAIN error), then explain, then
-  // parse. A null return means the failure slot already carries the reason.
-  // Thrown host errors are caught here too: whichever button ran the pipeline,
-  // a plan failure must say so — explainPlanAi's own catch would otherwise
-  // blame the AI panel for a failed EXPLAIN.
-  const fetchPlan = async (): Promise<{ parsed: ParsedPlan; dbType: string; warnings: string[] } | null> => {
-    const bridge = window.dbxPlugin;
-    if (!bridge?.getPlanCapabilities || !bridge.explainPlan) {
-      setFailure(t.planFailed);
-      return null;
-    }
-    try {
-      const caps = await bridge.getPlanCapabilities(connectionId);
-      if (!caps?.supports?.estimatedPlan) {
-        setFailure(t.planUnsupported);
-        return null;
-      }
-      const result = await bridge.explainPlan({
-        connectionId,
-        database: database || undefined,
-        // The host applies the tab schema as search_path on its own query path
-        // but not here; without it unqualified names resolve against the
-        // default search_path and miss the tables the result set came from.
-        schema: schema || undefined,
-        sql,
-        mode: "estimated",
-      });
-      const parsed = parsePlan(result.format, result.rawPlan);
-      if (!parsed) {
-        setFailure(t.planUnreadable);
-        return null;
-      }
-      return { parsed, dbType: result.dbType || caps.dbType || "", warnings: result.warnings ?? [] };
-    } catch (cause) {
-      console.error("[result-view] plan fetch failed", cause);
-      setFailure(withCause(t.planFailed, cause));
-      return null;
-    }
-  };
-
   const createPlan = async () => {
     setBusy(true);
     setFailure(null);
     try {
-      const fetched = await fetchPlan();
-      if (!fetched) {
+      const fetched = await fetchPlanMetadata({ connectionId, database, schema, sql }, t);
+      if (!fetched.ok) {
+        setFailure(fetched.failure);
         return;
       }
       // The plan is on its way to the canvas: pivot the AI panel's chips from
@@ -300,9 +301,87 @@ function useResultViewActions(params: {
     }
   };
 
-  // F-01: same pipeline, but the parsed plan goes to the host's built-in AI
-  // panel as a one-way snapshot instead of onto a canvas. The size is measured
-  // because the host rejects oversized contexts before anything opens.
+  const reveal = async () => {
+    setFailure(null);
+    try {
+      await revealInFileManager("documents");
+    } catch (cause) {
+      console.error("[result-view] could not open the DBX file manager", cause);
+      setFailure(t.revealFailed);
+    }
+  };
+
+  return {
+    create: () => void create(),
+    createPlan: () => void createPlan(),
+    reveal: () => void reveal(),
+  };
+}
+
+/**
+ * One plan fetch shared by the canvas plan and the AI plan handoff, sequential
+ * on purpose: capabilities first (a connection without estimated-plan support
+ * should say so instead of surfacing a host-side EXPLAIN error), then explain,
+ * then parse. The failure comes back ready to render — whichever action ran
+ * the pipeline puts it in the shared slot, so a failed EXPLAIN never gets
+ * blamed on the AI panel by the canvas path or the other way around.
+ */
+async function fetchPlanMetadata(
+  params: { connectionId: string; database: string; schema: string; sql: string },
+  t: Strings,
+): Promise<{ ok: true; parsed: ParsedPlan; dbType: string; warnings: string[] } | { ok: false; failure: string }> {
+  const { connectionId, database, schema, sql } = params;
+  const bridge = window.dbxPlugin;
+  if (!bridge?.getPlanCapabilities || !bridge.explainPlan) {
+    return { ok: false, failure: t.planFailed };
+  }
+  try {
+    const caps = await bridge.getPlanCapabilities(connectionId);
+    if (!caps?.supports?.estimatedPlan) {
+      return { ok: false, failure: t.planUnsupported };
+    }
+    const result = await bridge.explainPlan({
+      connectionId,
+      database: database || undefined,
+      // The host applies the tab schema as search_path on its own query path
+      // but not here; without it unqualified names resolve against the
+      // default search_path and miss the tables the result set came from.
+      schema: schema || undefined,
+      sql,
+      mode: "estimated",
+    });
+    const parsed = parsePlan(result.format, result.rawPlan);
+    if (!parsed) {
+      return { ok: false, failure: t.planUnreadable };
+    }
+    return { ok: true, parsed, dbType: result.dbType || caps.dbType || "", warnings: result.warnings ?? [] };
+  } catch (cause) {
+    console.error("[result-view] plan fetch failed", cause);
+    return { ok: false, failure: withCause(t.planFailed, cause) };
+  }
+}
+
+/**
+ * The page's AI-panel actions. The plan handoff (send: true) carries a fixed
+ * interpretation prompt because a plan is meaningless without one; the generic
+ * result-data handoff (send: false) is the opposite on purpose — the snapshot
+ * carries the SQL and the display-ready cells, the conversation opens with a
+ * neutral note, and what to ask is the user's business.
+ */
+function useResultViewAiActions(params: {
+  connectionId: string;
+  database: string;
+  /** The tab's schema; the plan EXPLAIN needs it to resolve unqualified names. */
+  schema: string;
+  sql: string;
+  /** The live result snapshot; the data handoff ships it verbatim. */
+  result: ResultSetContext["result"];
+  slot: ActionSlot;
+  t: Strings;
+}): ResultViewAiActions {
+  const { connectionId, database, schema, sql, result, slot, t } = params;
+  const { setBusy, setFailure } = slot;
+
   const explainPlanAi = async () => {
     setBusy(true);
     setFailure(null);
@@ -312,8 +391,9 @@ function useResultViewActions(params: {
         setFailure(t.planAiFailed);
         return;
       }
-      const fetched = await fetchPlan();
-      if (!fetched) {
+      const fetched = await fetchPlanMetadata({ connectionId, database, schema, sql }, t);
+      if (!fetched.ok) {
+        setFailure(fetched.failure);
         return;
       }
       // Same pivot as the canvas path: the snapshot going to the AI panel is a
@@ -336,23 +416,32 @@ function useResultViewActions(params: {
     }
   };
 
-  const reveal = async () => {
+  const sendDataAi = async () => {
+    setBusy(true);
     setFailure(null);
     try {
-      await revealInFileManager("documents");
+      const bridge = window.dbxPlugin;
+      if (!bridge?.ai?.openConversation) {
+        setFailure(t.resultDataAiFailed);
+        return;
+      }
+      const snapshot = buildResultAiSnapshot({ connectionId, database, sql, result });
+      const note =
+        formatAll(t.resultDataAiPrompt, { n: snapshot.rowCount, m: result.columns.length }) +
+        (snapshot.truncated ? t.resultDataAiTruncated : "");
+      const title = (deriveName(sql) || t.resultViewTitle).slice(0, 200);
+      await bridge.ai.openConversation({ title, prompt: note, context: snapshot.context, send: false });
     } catch (cause) {
-      console.error("[result-view] could not open the DBX file manager", cause);
-      setFailure(t.revealFailed);
+      console.error("[result-view] data handoff to the AI panel failed", cause);
+      setFailure(withCause(t.resultDataAiFailed, cause));
+    } finally {
+      setBusy(false);
     }
   };
 
   return {
-    busy,
-    failure,
-    create: () => void create(),
-    createPlan: () => void createPlan(),
     explainPlanAi: () => void explainPlanAi(),
-    reveal: () => void reveal(),
+    sendDataAi: () => void sendDataAi(),
   };
 }
 
@@ -362,15 +451,17 @@ interface ResultHeaderProps {
   canCreate: boolean;
   canPlan: boolean;
   canAi: boolean;
+  canSendDataAi: boolean;
   onCreate: () => void;
   onAppend: () => void;
   onPlan: () => void;
   onExplainAi: () => void;
+  onSendDataAi: () => void;
   onBrowse: () => void;
   onReveal: () => void;
 }
 
-function ResultHeader({ t, busy, canCreate, canPlan, canAi, onCreate, onAppend, onPlan, onExplainAi, onBrowse, onReveal }: ResultHeaderProps) {
+function ResultHeader({ t, busy, canCreate, canPlan, canAi, canSendDataAi, onCreate, onAppend, onPlan, onExplainAi, onSendDataAi, onBrowse, onReveal }: ResultHeaderProps) {
   return (
     <header className="home-header">
       <div>
@@ -392,6 +483,11 @@ function ResultHeader({ t, busy, canCreate, canPlan, canAi, onCreate, onAppend, 
         {canAi && (
           <button type="button" className="btn" onClick={onExplainAi} disabled={busy || !canCreate}>
             {t.planAi}
+          </button>
+        )}
+        {canSendDataAi && (
+          <button type="button" className="btn" onClick={onSendDataAi} disabled={busy || !canCreate}>
+            {t.resultDataAi}
           </button>
         )}
         <button type="button" className="btn" onClick={onAppend} disabled={busy || !canCreate}>

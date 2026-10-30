@@ -88,6 +88,10 @@ export interface Strings {
   planTruncated: string;
   planAi: string;
   planAiFailed: string;
+  resultDataAi: string;
+  resultDataAiPrompt: string;
+  resultDataAiTruncated: string;
+  resultDataAiFailed: string;
   planAiTooLarge: string;
   planAiPrompt: string;
   planWarningsHeading: string;
@@ -203,6 +207,11 @@ const en: Strings = {
   planTruncated: "plan truncated to {n} nodes",
   planAi: "Ask AI",
   planAiFailed: "Could not open the DBX AI panel.",
+  resultDataAi: "Send data to AI",
+  resultDataAiPrompt:
+    "I attached a DBX query result set to this conversation's context: the SQL and {n} rows × {m} columns of data. I will ask questions about this data.",
+  resultDataAiTruncated: " (truncated to fit the context limit)",
+  resultDataAiFailed: "Could not open the DBX AI panel.",
   planAiTooLarge: "The plan snapshot exceeds the AI panel's size limit.",
   planAiPrompt: "Here is a query's estimated execution plan captured by DBX (EXPLAIN only, never executed). Explain the plan: what the query does step by step, where the cost concentrates (the highest-cost node is marked '<-- highest cost'), whether row estimates look suspicious, and which concrete changes (indexes, query rewrites, settings) would help. Reference node names. Answer in the user's language.",
   planWarningsHeading: "Plan warnings",
@@ -322,6 +331,10 @@ const zh: Strings = {
   planTruncated: "计划已截断为 {n} 个节点",
   planAi: "让 AI 解读",
   planAiFailed: "未能打开 DBX AI 面板。",
+  resultDataAi: "把数据发给 AI",
+  resultDataAiPrompt: "我通过 DBX 把一份查询结果集附到了本对话的上下文里：SQL 以及 {n} 行 × {m} 列数据。接下来我会就这些数据提问。",
+  resultDataAiTruncated: "（数据过大，仅附装得下的部分）",
+  resultDataAiFailed: "未能打开 DBX AI 面板。",
   planAiTooLarge: "计划快照超出 AI 面板的大小限制。",
   planAiPrompt: "以下是 DBX 取到的查询预估执行计划（仅 EXPLAIN，未真正执行）。请解读该计划：逐步说明查询实际在做什么、成本集中在哪里（最高成本节点已标注 '<-- highest cost'）、行数估算是否可疑，并给出具体可落地的优化建议（索引、改写、参数）。请引用节点名，并用用户的语言回答。",
   planWarningsHeading: "计划警告",
