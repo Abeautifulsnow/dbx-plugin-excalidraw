@@ -1,4 +1,44 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// The real Excalidraw package (loaded unmocked for the parity contract below)
+// reads `window` from module scope; node has none, so seed it before the
+// static import evaluates. globalThis carries everything else it touches.
+vi.hoisted(() => {
+  const env = globalThis as Record<string, unknown>;
+  const define = (name: string, value: unknown) => {
+    try {
+      if (env[name] === undefined) {
+        env[name] = value;
+      }
+    } catch {
+      // node 22 exposes some globals as getters; the package falls back fine.
+    }
+  };
+  define("location", { origin: "http://localhost" });
+  define("devicePixelRatio", 1);
+  define("document", {
+    createElement: () => ({
+      width: 0,
+      height: 0,
+      style: {},
+      // constants.ts probes "filter" in the 2d context at import time.
+      getContext: () => ({ filter: "" }),
+      setAttribute: () => {},
+      removeAttribute: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }),
+    body: { appendChild: () => {}, removeChild: () => {} },
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  });
+  define("navigator", { userAgent: "node" });
+  define("Element", class {});
+  define("HTMLElement", class {});
+  define("window", env);
+});
+
+import { restore } from "@excalidraw/excalidraw";
 import {
   APPEND_GAP,
   appendPlacement,
@@ -104,9 +144,9 @@ describe("buildGridScene", () => {
     // Must survive the round trip the backend performs.
     expect(JSON.parse(JSON.stringify(scene))).toEqual(scene);
     for (const element of elementsOf(scene)) {
+      // The builders emit the sparse element form: fields restore() refills
+      // (isDeleted, groupIds, ...) are asserted by the parity contract below.
       expect(typeof element.id).toBe("string");
-      expect(element.isDeleted).toBe(false);
-      expect(Array.isArray(element.groupIds)).toBe(true);
       expect(typeof element.seed).toBe("number");
       expect(typeof element.versionNonce).toBe("number");
     }
@@ -351,6 +391,16 @@ describe("resolveRowLimit", () => {
     expect(resolveRowLimit(500, 100, 25)).toBe(25);
   });
 
+  it("maps a stale remembered count up to the offered maximum", () => {
+    // 200 stopped being offered when MAX_ROWS went to 500; a user who had
+    // maxed the old selector must not be demoted to the small default.
+    expect(resolveRowLimit(500, 200, null)).toBe(500);
+    // A remembered count above the data's size still resolves honestly.
+    expect(resolveRowLimit(50, 200, null)).toBe(50);
+    // ...and one within the choices is kept as before.
+    expect(resolveRowLimit(500, 25, null)).toBe(25);
+  });
+
   it("always returns one of the offered choices", () => {
     for (const availableRows of [0, 1, 12, 25, 499, 500, 5000]) {
       for (const remembered of [undefined, 1, 25, 100, 500, 99999]) {
@@ -362,6 +412,94 @@ describe("resolveRowLimit", () => {
         }
       }
     }
+  });
+});
+
+describe("sparse element form", () => {
+  it("restore() re-fills every omitted field to the historical value", () => {
+    // The builders omit fields only where restore()'s default equals the
+    // value the scene used to ship explicitly. This test is the contract:
+    // a field that fails here must be reinstated in the builder (or the
+    // omission is genuinely wrong for the installed Excalidraw version).
+    const built = buildGridScene({ columns: ["col"], rows: [["v"], ["w"]] }, { title: "T", caption: "c" });
+    const restored = restore({ elements: built.scene.elements as never, appState: {}, files: {} }, null, null);
+    const byId: Record<string, Record<string, unknown>> = Object.fromEntries(
+      restored.elements.map((element) => [element.id, element as unknown as Record<string, unknown>]),
+    );
+
+    const cell = byId["c-0-0"];
+    expect(cell).toMatchObject({
+      type: "text",
+      text: "v",
+      originalText: "v",
+      strokeColor: "#1e1e1e",
+      backgroundColor: "transparent",
+      fillStyle: "solid",
+      strokeWidth: 1,
+      strokeStyle: "solid",
+      roughness: 0,
+      opacity: 100,
+      angle: 0,
+      fontSize: 13,
+      fontFamily: 3,
+      textAlign: "left",
+      // restore() defaults verticalAlign to "top"; the field only matters for
+      // container-bound text, and these cells are free-standing, so the
+      // omission is behavior-preserving.
+      verticalAlign: "top",
+      containerId: null,
+      autoResize: true,
+      lineHeight: 1.25,
+      roundness: null,
+      isDeleted: false,
+      groupIds: [],
+      frameId: null,
+      // restore() normalizes the historical null to an empty array — the two
+      // are equivalent (no bindings), so the omission stands.
+      boundElements: [],
+      link: null,
+      locked: false,
+    });
+
+    const title = byId["title"];
+    expect(title).toMatchObject({ type: "text", fontFamily: 2, fontSize: 20, text: "T" });
+
+    const table = byId["table"];
+    expect(table).toMatchObject({ type: "rectangle", strokeColor: "#adb5bd", strokeWidth: 1, roughness: 0 });
+    expect(table.backgroundColor).toBe("transparent");
+
+    const header = byId["head-0"];
+    expect(header).toMatchObject({ type: "rectangle", backgroundColor: "#f1f3f5", strokeColor: "#adb5bd" });
+  });
+
+  it("round-trips through restore without visual drift in geometry", () => {
+    const built = buildGridScene(grid(3, 2), { title: "T" });
+    const restored = restore({ elements: built.scene.elements as never, appState: {}, files: {} }, null, null);
+    for (const element of restored.elements) {
+      const original = (built.scene.elements as Array<Record<string, unknown>>).find((e) => e.id === element.id);
+      expect(element.x).toBe(original!.x);
+      expect(element.y).toBe(original!.y);
+      expect(element.width).toBe(original!.width);
+      expect(element.height).toBe(original!.height);
+    }
+  });
+});
+
+describe("row ceiling", () => {
+  it("lays out a full 500-row snapshot under the default budget", () => {
+    // MAX_ROWS matches the host's snapshot ceiling, so a typical seven-column
+    // table must land in full — the "rows left off" pill only has something to
+    // say when the byte budget, not the ceiling, runs out first.
+    const built = buildGridScene(grid(500, 7), {});
+    expect(built.includedRows).toBe(500);
+    expect(built.droppedRows).toBe(false);
+    expect(built.bytes).toBeLessThan(1_500_000);
+  });
+
+  it("offers the ceiling as a row choice once the data has that many rows", () => {
+    expect(rowChoices(500)).toContain(MAX_ROWS);
+    expect(rowChoices(5000)).toContain(MAX_ROWS);
+    expect(rowChoices(300)).not.toContain(MAX_ROWS);
   });
 });
 

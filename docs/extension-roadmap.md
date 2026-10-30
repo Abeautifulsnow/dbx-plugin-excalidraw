@@ -74,9 +74,15 @@
   - 标题去重 `uniqueGridTitle`：两条 SQL 同读一表时派生名相同，追加标题自动加序号（`Query: t (2)`），只认标题字号（20）的文本元素，单元格文本不占命名空间
   - 对话框复用 modal 样式：`document/list` 按后端序（lastOpened 倒序）默认选中最近一张；选中即 `document/get` 载入原始存储场景（顺带 bump lastOpened，与打开行为一致）；摘要行如实展示合并结果（行数 × 列数 + 超限省略警告），损坏文档禁用
   - 持久化复用 `persistImportedScene`（hash 引用的图片资产原样带过，不触发重上传）；零新权限、零 manifest 变更；单测 +11（placement/bounds/合并保序与信封/预算收缩/scene-full/标题去重）
+- [x] **铺满宿主快照：MAX_ROWS 200→500 + 稀疏元素形态**（2026-10-30，随 0.4.1 发布）
+  - 宿主快照上限即 500 行，网格此前再砍到 200 没有依据；对齐后 500 行 ×7 列典型表可整表上画布，行数选择器自动出现「最多 500 行」
+  - 直接放上限会被场景 2MB 预算裁到 ~348 行——每单元格一个 ~600 单位的完整 JSON 元素是体积大头。`baseElement` 改为**稀疏形态**：与 installed Excalidraw `restore()` 默认值相同的字段（angle/opacity/roundness/isDeleted/groupIds/frameId/boundElements/link/locked/index/updated/fillStyle/backgroundColor(透明)/textAlign/verticalAlign/containerId/autoResize/originalText）全部省略，每元素省 ~40-50%
+  - 省略契约由 vitest 对**真实未 mock 的 restore()** 钉住（`restore-parity` 两例）：省略字段被 restore 补回后逐字段比对历史值。两处真实差异按语义等价接受并记录——`boundElements` null→`[]`；`verticalAlign` middle→`top`（自由文本不参与该字段）；`lineHeight` restore 默认是 **2** 会双倍重算编辑后的文本框，**必须显式保留 1.25**。vitest 需要 `server.deps.inline` + roughjs alias + window 垫片才能加载真实包（其余测试仍 mock）
+  - 500 行硬上限的正规突破路径仍是 dataApi 重查（T-A，需 `host.data:read` 权限 + 授权 + 宿主 ≥0.6.26）；超预算的宽表依旧由按字节数裁行 + UI 如实声明兜底
 - [x] **把数据发给 AI**（2026-10-30，随 0.4.1 发布）
   - 结果视图第三 AI 入口，刻意泛化：`ai.openConversation` 单向快照带上 SQL + 展示就绪的单元格（与画布同一 `cellText` 路径），**`send:false` 打开即停**——问什么（解读/对比/异常/写后续 SQL）由用户决定，插件不预设意图（与计划入口的固定解读 prompt 相反，是方向修正而非遗漏）
   - 行数按 2MiB 上下文预算对半采样（`buildResultAiSnapshot`，16 KiB 信封余量），截断在 prompt 里如实声明；门控仅 `capabilities.ai`，零新权限、零 manifest 变更；单测 +5（整装/单元格展平/采样截断/保底 1 行/空集）
+  - 已知边界（2026-10-30 真机反馈）：推荐 chips 是宿主管道路径里的**裸 prompt**——点击落进哪条会话由宿主决定，而数据快照只存在于「把数据发给 AI」开出的那条插件会话里；在普通连接会话点 chip，模型只能空谈"读不到画布"并拒绝作答。插件侧缓解：5 条 chips prompt 全部改为指认"本对话上下文附带的快照"，并自带无快照防呆（提示先点对应交接按钮，结果集→「把数据发给 AI」、计划→「让 AI 解读」；vitest 契约钉住 prompt 必须含按钮文案）；交接说明注明快照仅本对话可见。根治需宿主让 chip 携带数据或绑定会话，暂不可行
 
 ---
 
@@ -101,6 +107,9 @@
 - [ ] 三份以上结果集连续追加同一张画布，每次落在上一份右侧
 - [ ] 边界面：空库（无图表）提示先创建；损坏文档禁选；接近 2MB 的目标画布如实展示「画布已满」或省略行数
 - [ ] 「把数据发给 AI」：AI 面板打开且不自动发送，上下文含 SQL 与数据行；prompt 行列数与实际一致；大数据集截断声明出现
+- [ ] chips 防呆：在普通连接会话点「解读这份结果集」→ 模型提示先点「把数据发给 AI」而不编造数值；在「把数据发给 AI」开出的会话里点 chip → 正常引用快照数据作答
+- [ ] `send:false` 注入时机：插件会话预填说明**不自动发送**，用户手动发出首条消息后模型能引用快照数值（宿主侧行为，aiPluginConversation）
+- [ ] 500 行结果集（≤7 列、常规长度单元格）选择「最多 500 行」后整表上画布；历史画布（全量元素形态）打开、编辑、追加均正常（稀疏形态 round-trip）
 
 ---
 

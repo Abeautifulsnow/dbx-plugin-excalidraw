@@ -37,6 +37,14 @@ export default defineConfig({
           new URL("./node_modules/@excalidraw/excalidraw/dist/dev/index.css", import.meta.url),
         ),
       },
+      {
+        // The dev entry imports roughjs without the .js extension, which vite
+        // build resolves but vitest's node resolver does not. Pinning the real
+        // file lets tests load the unmocked package (the restore() parity
+        // contract depends on its genuine defaults).
+        find: /^roughjs\/bin\/rough$/,
+        replacement: fileURLToPath(new URL("./node_modules/roughjs/bin/rough.js", import.meta.url)),
+      },
     ],
   },
   build: {
@@ -49,5 +57,14 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // Inline the Excalidraw package so the aliases above reach its own
+    // imports: node would otherwise externalize it and fail on the dev
+    // entry's extensionless roughjs import. Only the resultScene parity
+    // tests load the real package; everything else mocks it.
+    server: {
+      deps: {
+        inline: [/@excalidraw/],
+      },
+    },
   },
 });

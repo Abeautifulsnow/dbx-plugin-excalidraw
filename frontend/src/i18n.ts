@@ -209,7 +209,7 @@ const en: Strings = {
   planAiFailed: "Could not open the DBX AI panel.",
   resultDataAi: "Send data to AI",
   resultDataAiPrompt:
-    "I attached a DBX query result set to this conversation's context: the SQL and {n} rows × {m} columns of data. I will ask questions about this data.",
+    "I attached a DBX query result set to this conversation's context: the SQL and {n} rows × {m} columns of data. The snapshot lives in this conversation only. I will ask questions about this data.",
   resultDataAiTruncated: " (truncated to fit the context limit)",
   resultDataAiFailed: "Could not open the DBX AI panel.",
   planAiTooLarge: "The plan snapshot exceeds the AI panel's size limit.",
@@ -228,19 +228,19 @@ const en: Strings = {
   pasteFailed: "Could not read the clipboard.",
   recInterpretResultLabel: "Interpret this result set",
   recInterpretResultPrompt:
-    "Interpret the result set on this canvas: what the data shows, notable outliers or trends, and which rows matter most. Reference actual values where useful.",
+    "Interpret the result-set snapshot attached to this conversation: what the data shows, notable outliers or trends, and which rows matter most. Reference actual values where useful. If no snapshot is attached, tell me to click \"Send data to AI\" on the result view first; do not invent values.",
   recVisualizeLabel: "Suggest a visualization",
   recVisualizePrompt:
-    "Based on this result set's columns and value shapes, recommend the best chart type for the data and explain why, so it can be sketched on the canvas.",
+    "Based on the columns and value shapes of the result-set snapshot attached to this conversation, recommend the best chart type for the data and explain why, so it can be sketched on the canvas. If no snapshot is attached, tell me to click \"Send data to AI\" on the result view first.",
   recOptimizeSqlLabel: "Review the SQL",
   recOptimizeSqlPrompt:
-    "Review the SQL behind this result set for correctness and performance pitfalls, and suggest concrete improvements such as indexes or rewrites.",
+    "Review the SQL behind the result-set snapshot attached to this conversation for correctness and performance pitfalls, and suggest concrete improvements such as indexes or rewrites. If no snapshot is attached, tell me to click \"Send data to AI\" on the result view first.",
   recInterpretPlanLabel: "Interpret this execution plan",
   recInterpretPlanPrompt:
-    "Interpret the execution plan on this canvas: what each operator does, where the cost concentrates, and whether row estimates look suspicious. Reference node names.",
+    "Interpret the execution-plan snapshot attached to this conversation: what each operator does, where the cost concentrates, and whether row estimates look suspicious. Reference node names. If no snapshot is attached, tell me to use \"Ask AI\" on the plan first.",
   recPlanSuggestionsLabel: "Plan improvement suggestions",
   recPlanSuggestionsPrompt:
-    "Based on this execution plan, suggest concrete changes (indexes, query rewrites, settings) and name the node each change addresses.",
+    "Based on the execution-plan snapshot attached to this conversation, suggest concrete changes (indexes, query rewrites, settings) and name the node each change addresses. If no snapshot is attached, tell me to use \"Ask AI\" on the plan first.",
 };
 
 const zh: Strings = {
@@ -332,7 +332,7 @@ const zh: Strings = {
   planAi: "让 AI 解读",
   planAiFailed: "未能打开 DBX AI 面板。",
   resultDataAi: "把数据发给 AI",
-  resultDataAiPrompt: "我通过 DBX 把一份查询结果集附到了本对话的上下文里：SQL 以及 {n} 行 × {m} 列数据。接下来我会就这些数据提问。",
+  resultDataAiPrompt: "我通过 DBX 把一份查询结果集附到了本对话的上下文里：SQL 以及 {n} 行 × {m} 列数据。快照只附在这条对话里，其他对话看不到。接下来我会就这些数据提问。",
   resultDataAiTruncated: "（数据过大，仅附装得下的部分）",
   resultDataAiFailed: "未能打开 DBX AI 面板。",
   planAiTooLarge: "计划快照超出 AI 面板的大小限制。",
@@ -351,19 +351,19 @@ const zh: Strings = {
   pasteFailed: "无法读取剪贴板。",
   recInterpretResultLabel: "解读这份结果集",
   recInterpretResultPrompt:
-    "请解读画布上的这份结果集：数据说明了什么、有哪些明显的异常值或趋势、哪些行最值得关注。请尽量引用真实数值。",
+    "请解读本对话上下文里附带的结果集：数据说明了什么、有哪些明显的异常值或趋势、哪些行最值得关注。请尽量引用真实数值。如果上下文里没有附带快照，请提示我先在结果视图点「把数据发给 AI」，不要编造数值。",
   recVisualizeLabel: "推荐可视化方式",
   recVisualizePrompt:
-    "请根据这份结果集的列与取值形态，推荐最适合的图表类型并说明理由，方便我在画布上把它画出来。",
+    "请根据本对话上下文附带结果集的列与取值形态，推荐最适合的图表类型并说明理由，方便我在画布上把它画出来。如果上下文里没有附带快照，请提示我先在结果视图点「把数据发给 AI」。",
   recOptimizeSqlLabel: "审查这段 SQL",
   recOptimizeSqlPrompt:
-    "请审查这份结果集背后的 SQL，指出正确性与性能隐患，并给出具体改进建议（索引、改写、参数等）。",
+    "请审查本对话上下文附带结果集背后的 SQL，指出正确性与性能隐患，并给出具体改进建议（索引、改写、参数等）。如果上下文里没有附带快照，请提示我先在结果视图点「把数据发给 AI」。",
   recInterpretPlanLabel: "解读这份执行计划",
   recInterpretPlanPrompt:
-    "请解读这张画布上的执行计划：每个算子在做什么、成本集中在哪里、行数估算是否可疑。请引用节点名。",
+    "请解读本对话上下文里附带的执行计划：每个算子在做什么、成本集中在哪里、行数估算是否可疑。请引用节点名。如果上下文里没有附带计划快照，请提示我先用「让 AI 解读」带上计划。",
   recPlanSuggestionsLabel: "计划优化建议",
   recPlanSuggestionsPrompt:
-    "请基于这份执行计划给出具体可落地的改动建议（索引、改写、参数），并说明每条建议对应哪个节点。",
+    "请基于本对话上下文附带的执行计划给出具体可落地的改动建议（索引、改写、参数），并说明每条建议对应哪个节点。如果上下文里没有附带计划快照，请提示我先用「让 AI 解读」带上计划。",
 };
 
 export const strings: Record<Lang, Strings> = { en, zh };

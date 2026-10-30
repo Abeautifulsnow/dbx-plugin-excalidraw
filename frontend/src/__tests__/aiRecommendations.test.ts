@@ -33,6 +33,33 @@ describe("recommendation builders", () => {
     expect(resultRecommendations(strings.en)[0].label).not.toEqual(resultRecommendations(strings.zh)[0].label);
     expect(planRecommendations(strings.en)[0].prompt).not.toEqual(planRecommendations(strings.zh)[0].prompt);
   });
+
+  it("tells the model how to recover when a chip lands in a snapshotless conversation", () => {
+    // Chips are bare prompts; the host routes a click into whatever
+    // conversation is active, and the data snapshot only exists in the
+    // conversation opened by the handoff buttons. Every prompt must name its
+    // own handoff button, so a click in the wrong conversation gets actionable
+    // guidance instead of a confession that the canvas is unreadable
+    // (2026-10-30 field report).
+    for (const t of [strings.en, strings.zh]) {
+      for (const rec of resultRecommendations(t)) {
+        expect(rec.prompt).toContain(t.resultDataAi);
+      }
+      for (const rec of planRecommendations(t)) {
+        expect(rec.prompt).toContain(t.planAi);
+      }
+    }
+  });
+
+  it("keeps the handoff note's row/column placeholders substitutable", () => {
+    // formatAll leaves unknown keys as literal "{n}" text, so a copy edit
+    // that drops a placeholder would ship a broken count in the panel note.
+    // The send-to-AI action formats exactly {n} rows and {m} columns.
+    for (const t of [strings.en, strings.zh]) {
+      expect(t.resultDataAiPrompt).toContain("{n}");
+      expect(t.resultDataAiPrompt).toContain("{m}");
+    }
+  });
 });
 
 describe("isPlanDocumentName", () => {

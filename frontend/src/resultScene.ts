@@ -90,7 +90,11 @@ const CAPTION_STROKE = "#868e96";
 
 const SCENE_MARGIN = 40;
 // Exposed so the UI can offer only row counts the layout can actually honour.
-export const MAX_ROWS = 200;
+// Aligned with the host's result-snapshot ceiling (500 rows): the snapshot
+// never carries more, and a typical seven-column table lays out in full under
+// the default byte budget. Wider or fuller tables still degrade honestly —
+// the row-count binary search trims to the budget and the UI reports it.
+export const MAX_ROWS = 500;
 const MAX_COLUMNS = 24;
 const DEFAULT_MAX_BYTES = 1_500_000;
 
@@ -161,6 +165,13 @@ export function resolveRowLimit(
   }
   if (remembered !== undefined && choices.includes(remembered)) {
     return remembered;
+  }
+  // A remembered count that is no longer offered means the ceiling moved
+  // (200 was dropped when MAX_ROWS went to 500) and the user sat at or near
+  // it; fall back to the largest count this result offers rather than
+  // demoting them to the small default.
+  if (remembered !== undefined && remembered > initialRowLimit(availableRows)) {
+    return choices[choices.length - 1];
   }
   return initialRowLimit(availableRows);
 }
@@ -266,33 +277,29 @@ export function cellText(value: unknown): string {
   return fitCellText(text, WIDEST_CELL_WIDTH, FONT_SIZE);
 }
 
+/**
+ * The sparse element form. Fields whose values equal what the installed
+ * Excalidraw `restore()` defaults to are omitted — per-cell elements dominate
+ * a large grid's scene size, and the omission is what lets a full 500-row
+ * snapshot stay inside the scene budget. The contract is pinned by
+ * `__tests__/resultScene.test.ts`: restore() must re-fill every omitted field
+ * to exactly the value this function used to write. Non-defaults stay:
+ * strokeWidth 1 (default 2), roughness 0 (default 1).
+ */
 export function baseElement(id: string, seed: number, nonce: number): SceneElement {
   return {
     id,
     x: 0,
     y: 0,
     strokeColor: TEXT_STROKE,
-    backgroundColor: "transparent",
-    fillStyle: "solid",
     strokeWidth: 1,
     strokeStyle: "solid",
-    roundness: null,
     roughness: 0,
-    opacity: 100,
     width: 0,
     height: 0,
-    angle: 0,
     seed,
     version: 1,
     versionNonce: nonce,
-    index: null,
-    isDeleted: false,
-    groupIds: [],
-    frameId: null,
-    boundElements: null,
-    updated: 1,
-    link: null,
-    locked: false,
   };
 }
 
@@ -319,39 +326,52 @@ interface RectOptions extends Geometry {
 
 export function textElement(id: string, text: string, options: TextOptions, sequence: () => number): SceneElement {
   const fontSize = options.fontSize ?? FONT_SIZE;
-  return {
+  const element: SceneElement = {
     ...baseElement(id, sequence(), sequence()),
     type: "text",
     x: options.x,
     y: options.y,
     width: options.width,
     height: options.height,
-    strokeColor: options.strokeColor ?? TEXT_STROKE,
     text,
-    originalText: text,
     fontSize,
+    // Font family 3 is the monospace face and restore()'s default is 1, so
+    // the field always ships. lineHeight ships too: restore()'s default is 2,
+    // and a user editing a cell would re-measure the box at double height.
     fontFamily: options.fontFamily ?? 3,
-    textAlign: options.textAlign ?? "left",
-    verticalAlign: "middle",
-    containerId: null,
-    autoResize: true,
     lineHeight: LINE_HEIGHT,
   };
+  if (options.strokeColor && options.strokeColor !== TEXT_STROKE) {
+    element.strokeColor = options.strokeColor;
+  }
+  if (options.textAlign && options.textAlign !== "left") {
+    element.textAlign = options.textAlign;
+  }
+  return element;
 }
 
 export function rectElement(id: string, options: RectOptions, sequence: () => number): SceneElement {
-  return {
+  const element: SceneElement = {
     ...baseElement(id, sequence(), sequence()),
     type: "rectangle",
     x: options.x,
     y: options.y,
     width: options.width,
     height: options.height,
-    backgroundColor: options.backgroundColor ?? "transparent",
+    // Every rect this module draws needs a non-default stroke color (borders
+    // are gray, bands are transparent), so the field always ships.
     strokeColor: options.strokeColor ?? BORDER_STROKE,
-    strokeWidth: options.strokeWidth ?? 1,
-    fillStyle: options.fillStyle ?? "solid",
   };
+  if (options.backgroundColor && options.backgroundColor !== "transparent") {
+    element.backgroundColor = options.backgroundColor;
+  }
+  if (options.strokeWidth !== undefined && options.strokeWidth !== 1) {
+    element.strokeWidth = options.strokeWidth;
+  }
+  if (options.fillStyle && options.fillStyle !== "solid") {
+    element.fillStyle = options.fillStyle;
+  }
+  return element;
 }
 
 // A single line of text at the given size, sized by the same width estimate the
