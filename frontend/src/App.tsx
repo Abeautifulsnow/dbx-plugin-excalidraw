@@ -51,6 +51,28 @@ export function App() {
     [launch],
   );
 
+  const current: View = view ?? (resultSet ? { name: "result" } : { name: "home" });
+  const openDocument = (meta: DocumentMeta) => setView({ name: "editor", id: meta.id });
+  const back = () => setView({ name: "home" });
+
+  // The host tab follows the view. The editor page titles it with the open
+  // document while it is mounted (the hook drops out there), so every
+  // non-editor view states its own name here and the switch back re-runs the
+  // hook. Result tabs use the query-derived name — the same string the created
+  // canvas is titled with — so two tabs opened from different queries are told
+  // apart in the tab bar. A host without the capability ignores all of this
+  // and keeps its static contribution label.
+  //
+  // Rules of Hooks: this call must stay above the phase early returns below.
+  // In 0.4.0 it sat under them — the hook count changed when the phase left
+  // "boot", React unmounted the whole tree, and every tab opened blank. The
+  // null stance keeps boot/nohost from touching the title.
+  const viewTitle =
+    current.name === "result"
+      ? (resultSet ? deriveName(resultSet.sql) : "") || t.resultViewTitle
+      : t.productName;
+  useTabTitle(phase === "ready" && current.name !== "editor" ? viewTitle : null);
+
   // No need to wait for `launch` here: the bridge resolves `ready` and then
   // dispatches `dbx-plugin-init` synchronously in the same tick (and the hook
   // primes from the cached context otherwise). A host that sends neither simply
@@ -70,22 +92,6 @@ export function App() {
     );
   }
 
-  const current: View = view ?? (resultSet ? { name: "result" } : { name: "home" });
-  const openDocument = (meta: DocumentMeta) => setView({ name: "editor", id: meta.id });
-  const back = () => setView({ name: "home" });
-
-  // The host tab follows the view. The editor page titles it with the open
-  // document while it is mounted (the hook drops out there), so every
-  // non-editor view states its own name here and the switch back re-runs the
-  // hook. Result tabs use the query-derived name — the same string the created
-  // canvas is titled with — so two tabs opened from different queries are told
-  // apart in the tab bar. A host without the capability ignores all of this
-  // and keeps its static contribution label.
-  const viewTitle =
-    current.name === "result"
-      ? (resultSet ? deriveName(resultSet.sql) : "") || t.resultViewTitle
-      : t.productName;
-  useTabTitle(current.name === "editor" ? null : viewTitle);
 
   return (
     <ErrorBoundary>
