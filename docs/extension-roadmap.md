@@ -2,7 +2,7 @@
 
 > 本文件是**活的**任务清单：对照 `docs/reference/dbx-plugin-capabilities.md`（同步至 dbx main@adaaec5a3，Host API 1.4.0）维护，记录已实现、待实现、观望与已否决的拓展项。
 > 历史依据见 `out/capability-extension-report.md`（2026-09-21 时点合成报告，其中结论部分已被后续版本落地或证伪，以本文件为准）。
-> 最后更新：0.4.0 已发布（tag v0.4.0，2026-10-28）——标签页标题跟随 + AI 推荐提示词（T-B），真机清单转 post-install；capabilities 类型已对齐 2026-10-23 宿主帧（dbx main@590a311b5）。
+> 最后更新：0.4.0 资产因空白回归作废（React #310，见 §0 修复记录），修复随 **0.4.1** 发布（待打 tag）；capabilities 类型已对齐 2026-10-23 宿主帧（dbx main@590a311b5）。
 
 ## 状态图例
 
@@ -63,6 +63,10 @@
   - 视图接线：结果视图挂载设结果解读/可视化/SQL 审查 3 条（zh/en 双语），计划解析成功（上画布与 Ask AI 两路径）换计划解读/优化建议 2 条；EditorPage 对计划文档（命名约定 `<query> - plan` 或本地化标题）设计划推荐、其他文档清空；HomePage 挂载清空
   - dev-host 已完整模拟 `host.ai.*` 三方法（参数校验与生产桥同构），本地可验证；宿主源码已本地核对（dbx 仓 pluginHostBridge.ts / manifest.rs）
   - 真机待验：① 推荐条点击后 AI 会话的上下文来源（宿主侧行为）；② 多标签覆盖次序已按 visibility 重播种实现，真机确认 iframe display:none 翻转是否如预期触发 visibilitychange（宿主 App.vue 为 v-show 保活，理论成立）
+- [x] **修复 0.4.0 空白回归**（2026-10-30，随 0.4.1 发布）
+  - 根因：`useTabTitle` 位于 App 的 boot/nohost 提前返回之后——首帧（boot）不执行该 hook，ready 后 hook 数量变化，React 抛 #310 并卸载整树，**所有标签页空白**；宿主能力键缺失时 hook 所在路径不渲染反而稳态隐藏了问题（单测只测纯函数，不可见；dev-host 打开一次即可复现）
+  - 修复：hook 移到提前返回之前，boot/nohost 传 null 不动作；dev-host + 无头浏览器端到端验证渲染恢复（注入 DOM 错误陷阱抓到 #310 可读堆栈后定位）
+  - 防再发待办：引入 eslint-plugin-react-hooks 进 CI（见 P2）；发版前在 dev-host 至少打开一次工作台确认渲染
 
 ---
 
@@ -88,6 +92,8 @@
   - 验收要点：`PLUGIN_DATA_ACCESS_NOT_GRANTED` 的降级路径；并发 ≤4、结果 ≤8 MiB 的失败面；SQL 只读分类器拒绝时的文案。
 
 ### P2 —— 需要决策或先做实验
+
+- [ ] **引入 eslint-plugin-react-hooks**（hooks 顺序/依赖静态检查，防 Rules of Hooks 回归——0.4.0 空白回归即此类错误，单测无法捕获；CI 加一条 lint job 即可）
 
 - [ ] **T-C 表结构上画布**（context-menu `menu:"table"` + 声明式 `action.open-workbench` + `getTableMetadata`）
   - 价值：形成"数据/计划/结构"三条上画布产品线，拼 ER 草图。
@@ -143,5 +149,5 @@
 | 0.3.0 | 计划上画布 + Ask AI + 另存为 + 深链 + prefs | 已发布 |
 | 0.3.1 | 剪贴板整合（复制 JSON / 粘贴场景 / 粘贴截图） | 已发布（v0.3.1）；真机清单待过 |
 | 0.3.2 | 结果视图 schema 透传（惰性，待宿主）+ 错误透传推广（withCause）+ 复制预检信封计量 | 已发布（v0.3.2，2026-10-03） |
-| 0.4.0 | 标签页标题跟随 + AI 推荐提示词（T-B） | 已发布（v0.4.0）；真机清单待过 |
+| 0.4.0 | 标签页标题跟随 + AI 推荐提示词（T-B） | v0.4.0 资产因空白回归作废；**0.4.1（修复）待发布**；真机清单待过 |
 | 0.4.x+（候选） | T-A queryData 全量重查 | 未开工 |
