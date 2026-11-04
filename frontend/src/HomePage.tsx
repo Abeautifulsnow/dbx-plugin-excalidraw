@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { withCause } from "./errors";
 import { persistImportedScene } from "./persistence";
@@ -73,7 +73,7 @@ export function HomePage({ lang, t, onOpen }: HomePageProps) {
   const [deleteTarget, setDeleteTarget] = useState<DocumentMeta | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     setLoadFailure(null);
     try {
       const response = await api.listDocuments();
@@ -83,11 +83,11 @@ export function HomePage({ lang, t, onOpen }: HomePageProps) {
       setDocuments(null);
       setLoadFailure(withCause(t.loadFailed, error));
     }
-  };
+  }, [t]);
 
   useEffect(() => {
     void refresh();
-  }, []);
+  }, [refresh]);
 
   // The library is a plain canvas: nothing for the AI panel to talk about, so
   // clear whatever chips another view (a result tab) left behind — and keep

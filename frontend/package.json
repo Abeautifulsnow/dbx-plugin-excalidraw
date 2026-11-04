@@ -6,6 +6,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
+    "lint": "eslint --max-warnings=0 .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -18,7 +19,10 @@
     "@types/node": "^22.9.3",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
+    "@typescript-eslint/parser": "^8.72.1",
     "@vitejs/plugin-react": "4.3.4",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "typescript": "5.6.3",
     "vite": "5.4.11",
     "vitest": "^2.1.8"

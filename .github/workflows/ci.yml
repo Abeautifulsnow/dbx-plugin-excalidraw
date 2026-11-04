@@ -38,6 +38,10 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      # Rules of Hooks / exhaustive-deps gate. Unit tests cannot see hook-order
+      # regressions — the 0.4.0 blank-tab release was exactly that class of bug
+      # (hook registered after an early return), so this runs before typecheck.
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       # The build is the only step that exercises the font vendoring and the
