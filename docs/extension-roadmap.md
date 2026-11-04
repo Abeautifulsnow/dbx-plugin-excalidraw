@@ -2,7 +2,7 @@
 
 > 本文件是**活的**任务清单：对照 `docs/reference/dbx-plugin-capabilities.md`（同步至 dbx main@adaaec5a3，Host API 1.4.0）维护，记录已实现、待实现、观望与已否决的拓展项。
 > 历史依据见 `out/capability-extension-report.md`（2026-09-21 时点合成报告，其中结论部分已被后续版本落地或证伪，以本文件为准）。
-> 最后更新：0.4.1 已发布（tag v0.4.1，2026-10-30）——空白回归修复 + 追加到已有画布 + 500 行快照（稀疏元素）+ 把数据发给 AI，真机清单转 post-install；0.4.0 资产因空白回归作废（React #310，见 §0 修复记录）；capabilities 类型已对齐 2026-10-23 宿主帧（dbx main@590a311b5）。
+> 最后更新：2026-11-04——eslint-plugin-react-hooks 进 CI（P2 工程项落地）；T-C 前置侦察完成，contextMenu/table 全契约已从宿主源码钉死（dbx main@db75a08fcc08，2026-11-03，见 §1 P2 条目）；附带钉死 T-A queryData 精确契约；宿主 readImage "18 MiB" 结论修正为**非 bug**（24 MiB 是 base64 串上限，解码恰为 18 MiB），撤下上报项。此前：0.4.1 已发布（tag v0.4.1，2026-10-30），0.4.2 仅商店文案刷新。
 
 ## 状态图例
 
@@ -84,6 +84,13 @@
   - 行数按 2MiB 上下文预算对半采样（`buildResultAiSnapshot`，16 KiB 信封余量），截断在 prompt 里如实声明；门控仅 `capabilities.ai`，零新权限、零 manifest 变更；单测 +5（整装/单元格展平/采样截断/保底 1 行/空集）
   - 已知边界（2026-10-30 真机反馈）：推荐 chips 是宿主管道路径里的**裸 prompt**——点击落进哪条会话由宿主决定，而数据快照只存在于「把数据发给 AI」开出的那条插件会话里；在普通连接会话点 chip，模型只能空谈"读不到画布"并拒绝作答。插件侧缓解：5 条 chips prompt 全部改为指认"本对话上下文附带的快照"，并自带无快照防呆（提示先点对应交接按钮，结果集→「把数据发给 AI」、计划→「让 AI 解读」；vitest 契约钉住 prompt 必须含按钮文案）；交接说明注明快照仅本对话可见。根治需宿主让 chip 携带数据或绑定会话，暂不可行
 
+- [x] **eslint-plugin-react-hooks 进 CI**（2026-11-04，未发版）
+  - P2 工程项落地：`frontend/eslint.config.mjs`（flat config，刻意只开 `rules-of-hooks: error` + `exhaustive-deps: warn` 两条经典规则，不做全量风格 lint）；`npm run lint` = `eslint --max-warnings=0 .`（exhaustive-deps 同为硬门禁，存量 0 警告才敢收紧）；CI frontend job 在 typecheck 前加 lint step
+  - 依赖：`eslint@10` + `@typescript-eslint/parser@8`（ESLint 10 不再内置 TS 解析器）+ `eslint-plugin-react-hooks@7`
+  - 存量代码全绿：0 条 rules-of-hooks 违规（0.4.0 那处已修）；1 条 exhaustive-deps 警告（HomePage `refresh` 未入 deps）按正路修掉——`refresh` 包 `useCallback([t])`、effect 依赖 `[refresh]`，唯一行为差异是挂载中切宿主语言会重拉一次文档列表（本地 sidecar、无感）；lint + typecheck + 183 单测全过
+  - 随手核实：`npm audit` 24 条漏洞全部预存（dompurify/lodash-es ← excalidraw 运行时依赖、nanoid/source-map-js ← vite、tinypool ← vitest），lockfile 对漏洞包零版本变更；**dompurify 4×critical 随插件包出货**，修复需动 excalidraw 锁定版本，单独跟进
+  - 跟进项（2026-11-04 review 议定，不阻塞本项）：① HomePage 组件函数 290 行超长（预存），按筛选列表/导入/重命名对话框边界拆分；② HomePage 行为差异（切语言重拉列表）无组件测试覆盖——仓库单测策略是纯函数，若引入组件测试（如 @testing-library/react）再补「挂载调一次 listDocuments / 换 t 重拉且清空 loadFailure」两用例
+
 ---
 
 ### 0.4.0 真机验证清单（v0.4.0 资产作废——随 0.4.1 包一并过）
@@ -119,16 +126,22 @@
 
 - [ ] **T-A 结果画布全量重查**（`queryData`，Host API 1.4）
   - 做什么：`Sketch on canvas` 在 `capabilities.dataApi` 且用户授权后，用 `host.data:read` 重查完整结果集铺画布，消除 500 行快照截断；未授权/旧宿主走现路径零破坏；进阶：数据驱动图表（柱状/趋势）。
-  - 前置：新权限 `host.data:read` → 触发权限三处同步 + catalog 相等门；逐连接授权对话框（用户可见同意面）；真机 ≥0.6.26。
-  - 验收要点：`PLUGIN_DATA_ACCESS_NOT_GRANTED` 的降级路径；并发 ≤4、结果 ≤8 MiB 的失败面；SQL 只读分类器拒绝时的文案。
+  - 前置：新权限 `host.data:read` → 触发权限三处同步 + catalog 相等门；逐连接授权对话框（用户可见同意面）；宿主 ≥ 2026-09-25（权限串引入于 dbx 26a015cd8）。
+  - 验收要点：`PLUGIN_DATA_ACCESS_NOT_GRANTED` 的降级路径；SQL 只读分类器拒绝时的文案。
+  - **契约已从宿主源码钉死**（2026-11-04，dbx main@db75a08fcc08）：能力键 `dataApi`；请求 `{ connectionId, database?, schema?, sql, maxRows?, timeoutMs? }`——sql ≤100k 字符、maxRows 默认 500 上限 **5000**、timeoutMs 钳到连接超时且 ≤60s（`apps/desktop/src/types/pluginData.ts`）；结果 `{ dbType, columns:[{name,dataType?}], rows:unknown[][], truncated, elapsedMs }`，`truncated` 覆盖行帽/字节帽/驱动截断三种来源。宿主源码对照注释指向 `crates/dbx-core/src/query/plugin_data.rs`（并发 ≤4、8 MiB 字节帽在后端侧，前端类型不见——实现时读该文件复核）。
 
 ### P2 —— 需要决策或先做实验
 
-- [ ] **引入 eslint-plugin-react-hooks**（hooks 顺序/依赖静态检查，防 Rules of Hooks 回归——0.4.0 空白回归即此类错误，单测无法捕获；CI 加一条 lint job 即可）
-
 - [ ] **T-C 表结构上画布**（context-menu `menu:"table"` + 声明式 `action.open-workbench` + `getTableMetadata`）
   - 价值：形成"数据/计划/结构"三条上画布产品线，拼 ER 草图。
-  - ~~前置决策：PRD 修订 R12 明确把"可视化数据库 schema"列为非目标~~ → **2026-10-03 重裁：有条件豁免**（裁定与条件见 `docs/PRD_V1_REVISIONS.md` §15）；剩余前置是权限三处同步 + 读宿主源码钉死 `contextMenu/table` 的 context 载荷形状（文档未写全）。
+  - ~~前置决策：PRD 修订 R12 明确把"可视化数据库 schema"列为非目标~~ → **2026-10-03 重裁：有条件豁免**（裁定与条件见 `docs/PRD_V1_REVISIONS.md` §15）。
+  - ~~前置：读宿主源码钉死 `contextMenu/table` 的 context 载荷形状~~ → **2026-11-04 侦察完成**（dbx main@db75a08fcc08），全部契约如下，可开工：
+    - **manifest 声明**（`manifest.rs:834-867` + `plugins/manifest.schema.json:358-379`，**schema 已收录**，上架校验无虞）：`{"type":"context-menu","id","label","menu":"connection"|"table","description?","icon?","dynamic?":false,"action?":{"type":"open-workbench","workbench":"<同插件 workbench id>"}}`；`deny_unknown_fields`；menu 枚举校验硬编码（`manifest.rs:1574`，其他值安装即拒）；action 只有 open-workbench 一种，悬空 workbench 引用校验期拒绝。
+    - **点击载荷**（`apps/desktop/src/lib/plugins/pluginContext.ts:62-73`）：仅侧边栏**规范表节点**触发（`node.type==="table"`，视图不触发）；context = `PluginTableContext` = `{ connectionId, table, database?, schema? }`（空值字段省略；无列信息、无数据、无内部元数据）。经 `openPluginWorkbench` 打开，options `{ title: contribution.label, connectionId, context, refreshContextOnReuse: true }`。
+    - **标签复用语义**（`queryStore.ts:4487-4490`）：`refreshContextOnReuse:true` 时同插件+同连接的已有标签**原地刷新 context**（snapshot 深拷贝，不重载 webview 不闪屏）——右键另一张表点同一菜单项，同一标签的 context 换成新表。0.4.1 记录的"openPluginWorkbench 重开不更新 context"只适用 result-view 单快照路径，**不适用本路径**。
+    - **`host.getTableMetadata`**（`pluginHostBridge.ts:886-889,1519,1720-1740`）：能力键 `schemaMetadataApi`（init 帧 capabilities，前端适配器有无置位）；强制 manifest 权限 `host.schema:read`（`:887`）；请求即 `PluginTableContext`（256 字符标识符校验）；返回 `{ columns:[{ name, dataType, nullable, length?, precision?, scale?, default? }], fieldCapabilities:{length,precision,scale,default} }`，后三项逐字段 `"supported"|"unsupported"|"unknown"` 供应方置信标注；**刻意不含**注释/键/凭据/SQL（宿主 issue #9917 明文）。
+    - **权限引入时间**：`host.schema:read` 2026-09-23（dbx d5a05a988）；更老宿主安装期硬拒 → README compat 表规则适用。无逐连接授权对话框（与 `host.data:read` 不同）——敏感面低一档，插件中心徽章情况真机核对。
+  - 剩余前置：权限三处同步（manifest ↔ .dbx-store.json ↔ check-manifest.mjs 白名单加 `host.schema:read`）+ 插件侧 `types.ts` capabilities 补 `schemaMetadataApi` 键与 `getTableMetadata` 声明（横切守则第一步）。
 - [ ] **T-D filedrop 拖放导入**
   - 已证实：filedrop/dragstate 帧**无权限门**（2026-09-21 复核结案）。
   - 未证实：真实宿主上帧是否到达（dev host 不模拟 webview 级拖放）→ 先做一次性监听实验，再决定是否投入。
@@ -168,7 +181,7 @@
 4. **dev host 不模拟任何新表面**（browser-bridge 缺 queryData/getTableMetadata/clipboard 全部新方法）：本地只做降级路径单测，真机（≥0.6.26 桌面版）验证清单写在 §0。
 5. **敏感权限的用户可见面**：`host.clipboard:read` 已被插件中心标为敏感徽章，`host.data:read` 有逐连接授权对话框；README 与 store releaseNotes 同步表述。
 6. **事件/提示不当真相**：若未来引入 `host.events`，广播会静默丢弃且零订阅即丢——每个消费者仍必须回读权威数据源。
-7. **桥限计量一律按 UTF-8 字节**（2026-10-03 审计结论）：宿主对每个 bridge request 的 **params 对象**做 `TextEncoder().encode(JSON.stringify(params)).byteLength ≤ 2 MiB` 校验（`pluginHostBridge.ts:582→1688`），按 UTF-16 `length` 计量对 CJK 内容会漏判（0.3.2 已修 AI context 一处）；`host.copy` 另有 2M 字符检查，但字节检查是更紧的约束（UTF-8 字节数恒 ≥ UTF-16 code unit 数）。现状：复制场景 JSON 按 request 信封**精确**预检——`host.copy` 的 params 恰为 `{ text }`，插件对 `JSON.stringify({ text: json })` 做 encode 即逐字节复刻宿主计量，仅留 4 KiB 常量余量；`saveScene` 不做插件侧预检——sidecar 本身按 2,000,000 字节拒收（`DOCUMENT_TOO_LARGE`），错误经 withCause 透传；512 KiB 分块与二进制转移路径（saveFile ≤512 MiB、fileTransfer ≤8 MiB）都是字节切片，天然安全。宿主附带发现：readImage 错误文案写 "18 MiB" 而常量是 24 MiB（`pluginHostBridge.ts:861`），下次触宿主时可顺手上报。
+7. **桥限计量一律按 UTF-8 字节**（2026-10-03 审计结论）：宿主对每个 bridge request 的 **params 对象**做 `TextEncoder().encode(JSON.stringify(params)).byteLength ≤ 2 MiB` 校验（`pluginHostBridge.ts:582→1688`），按 UTF-16 `length` 计量对 CJK 内容会漏判（0.3.2 已修 AI context 一处）；`host.copy` 另有 2M 字符检查，但字节检查是更紧的约束（UTF-8 字节数恒 ≥ UTF-16 code unit 数）。现状：复制场景 JSON 按 request 信封**精确**预检——`host.copy` 的 params 恰为 `{ text }`，插件对 `JSON.stringify({ text: json })` 做 encode 即逐字节复刻宿主计量，仅留 4 KiB 常量余量；`saveScene` 不做插件侧预检——sidecar 本身按 2,000,000 字节拒收（`DOCUMENT_TOO_LARGE`），错误经 withCause 透传；512 KiB 分块与二进制转移路径（saveFile ≤512 MiB、fileTransfer ≤8 MiB）都是字节切片，天然安全。~~宿主附带发现：readImage 错误文案写 "18 MiB" 而常量是 24 MiB~~ → **2026-11-04 复核结论：非 bug，不上报**——常量 `MAX_CLIPBOARD_IMAGE_BASE64_BYTES = 24 MiB`（`pluginHostBridge.ts:21`）量的是 base64 **字符串**长度（`:957` 检查 `dataBase64.length`），24 MiB base64 恰好解码为 18 MiB PNG，文案说的是解码后图片的上限，语义正确；顶多做文案澄清（"decoded"），无行为问题。
 8. **错误透传守则**（2026-10-03 推广）：每个喂给 toast / notice / 状态条的 catch 必须走 `frontend/src/errors.ts` 的 `withCause`（`errorDetail` 用于无基语的地方；分隔符 " — "，双语排版中性）；包装错误把底层宿主错误挂 `cause`（如 `ClipboardError`）。错误 toast 停留 7s（`ERROR_TOAST_MS`，HomePage/EditorPage），info 保持 4s；结果视图的失败提示不自动消失。刻意静默的路径维持原样并注明理由：prefs 读写（写入失败不值得打断）、逐资产下载降级（占位图兜底）、SVG 字体离线注册（有隐藏 live region 上报）。
 
 ---
